@@ -1,0 +1,70 @@
+---
+description: Enforce OpenSpec spec-driven development workflow
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# OpenSpec Workflow Enforcement
+
+You are operating in a project that uses OpenSpec for spec-driven development.
+Before writing ANY code, you MUST follow the OpenSpec workflow below.
+
+## The Golden Rule
+**Never write implementation code without an approved OpenSpec proposal.**
+If the user asks you to build, add, change, or refactor something, your first
+response should be to create or reference an OpenSpec proposal — not code.
+
+## Mandatory Workflow
+
+### 1. Propose first
+For any new feature, bug fix, or refactor, always start with:
+```
+/openspec:proposal <change-name>
+```
+This scaffolds `openspec/changes/<change-name>/` with:
+- `proposal.md` — scope and rationale
+- `specs/` — requirements and scenarios
+- `design.md` — technical approach
+- `tasks.md` — implementation checklist
+
+### 2. Wait for human review
+After generating the proposal, STOP. Tell the user to review and approve
+the proposal before proceeding. Do not skip ahead to implementation.
+
+### 3. Apply only after approval
+Once the user has confirmed the proposal looks correct, run:
+```
+/openspec:apply
+```
+Work through tasks.md one task at a time. Stay in scope — if something
+not in the spec comes up, flag it and update the proposal, don't just do it.
+
+### 4. Archive when done
+After all tasks are complete and the user confirms:
+```
+/openspec:archive
+```
+
+## Hard Rules
+- DO NOT write code for a feature that has no corresponding entry in `openspec/changes/`
+- DO NOT implement more than what is defined in `tasks.md`
+- If a user asks you to "just code it quickly", remind them of the OpenSpec
+  workflow and offer to create a fast proposal first
+- Always check `openspec/specs/` for existing specs before proposing — the
+  new change should not contradict the source of truth
+- Keep tasks small and reviewable. If a task feels too large, break it down
+  further before implementing
+
+## Reading Specs
+Before implementing anything, read:
+1. `openspec/project.md` — project context and constraints
+2. `openspec/AGENTS.md` — agent-specific instructions
+3. The relevant spec files in `openspec/specs/`
+4. The active change in `openspec/changes/<change-name>/`
+
+## Scope Creep Prevention
+If during implementation you discover work that wasn't in the original spec:
+- STOP implementation
+- Document the new finding
+- Ask the user whether to update the proposal or create a separate change
+- Never silently expand scope

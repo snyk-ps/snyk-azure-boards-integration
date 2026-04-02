@@ -1,0 +1,43 @@
+name: Create Release Tag on Merge to Main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # hashFiles() is not valid in job-level `if`; use a guard job instead.
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      run_release: ${{ steps.check.outputs.run_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f .github/template ]; then
+            echo "run_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "run_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    needs: guard
+    if: needs.guard.outputs.run_release == 'true'
+    runs-on: ubuntu-latest
+    # Required for Release Please: create/update release PRs, tags, and GitHub Releases.
+    # Without this, GITHUB_TOKEN is often read-only and you get "Resource not accessible by integration".
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release Please
+        uses: googleapis/release-please-action@v4
+        with:
+          release-type: simple # Or specify your desired release type (e.g., node, python)
+          token: ${{ secrets.GITHUB_TOKEN }}

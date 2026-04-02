@@ -1,0 +1,35 @@
+---
+description: Enforce guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Guidelines
+
+## General Requirements
+
+- You must use the current date in **UTC** for all time-sensitive calculations and references. If necessary, access Google Search to verify.
+
+
+## Python Code Requirements
+
+Target **Python 3.12+**.
+
+All code produced for Python must:
+
+- Always use `argparse` from the standard library for CLI interfaces.
+- For `SNYK_TOKEN` or any other secrets, use an environment variable. Never commit secrets. Do not log the token or credentials.
+- Use PEP 257 docstrings on modules and public functions and methods.
+- Follow PEP 8 Guidelines.
+- Use the Python standard library when possible.
+  Avoid dependencies outside the standard library if possible.
+- Any dependency outside the standard library must not introduce high or critical issues. **Use Snyk Open Source** to verify new or updated dependencies before merging.
+- Code must not introduce any high vulnerabilities. **Use Snyk Code** to verify before merging.
+- Always use uv for dependencies. (https://docs.astral.sh/uv/getting-started/installation/)
+- All functions and methods (public, protected) must have an associated unit test. Tests should assert documented behavior, including reasonable edge cases.
+
+## Additional Resources
+
+When in doubt, fall back to
+
+- For Python style guide: [PEP 8 – Style Guide for Python Code](https://peps.python.org/pep-0008/)

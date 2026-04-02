@@ -1,16 +1,18 @@
 """Entry point for the CLI."""
 
-import argparse
+from __future__ import annotations
 
+import sys
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Application description.")
-    return parser
+from commands import build_parser, run_fetch
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch subcommands."""
     parser = build_parser()
-    parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.command == "fetch":
+        return run_fetch(args)
     return 0
 
 

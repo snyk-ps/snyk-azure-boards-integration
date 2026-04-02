@@ -57,9 +57,9 @@ After all tasks are complete and the user confirms:
 
 ## Reading Specs
 Before implementing anything, read:
-1. `openspec/project.md` — project context and constraints
+1. `openspec/config.yaml` — project context (`context`) and per-artifact rules (`rules`); see `SPEC.md` for the capability → spec path table
 2. `openspec/AGENTS.md` — agent-specific instructions
-3. The relevant spec files in `openspec/specs/`
+3. The relevant spec files in `openspec/specs/<capability>/spec.md`
 4. The active change in `openspec/changes/<change-name>/`
 
 ## Scope Creep Prevention

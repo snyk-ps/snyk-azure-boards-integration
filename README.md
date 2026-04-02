@@ -60,7 +60,7 @@ This template assumes you use **[Cursor](https://cursor.com/)** as your IDE. `.c
 
   That initializes OpenSpec in your project (directories such as `openspec/`, project metadata, and editor integration as documented upstream).
 
-- **Read** `openspec/project.md`, `openspec/AGENTS.md`, and the workflow in `.cursor/rules/openspec.mdc` before you implement features.
+- **Read** `openspec/config.yaml` (project context), **`SPEC.md`** (capability → spec paths), `openspec/AGENTS.md`, and the workflow in `.cursor/rules/openspec.mdc` before you implement features.
 
 For background, issues, and releases, use the **[OpenSpec GitHub project](https://github.com/Fission-AI/OpenSpec)**.
 

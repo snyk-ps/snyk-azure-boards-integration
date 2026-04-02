@@ -1,0 +1,41 @@
+schema: spec-driven
+
+# Project context for OpenSpec (shown to AI when creating artifacts).
+# Normative detail: openspec/specs/<capability>/spec.md. Python style: .cursor/rules/guidelines.mdc
+context: |
+  Product: Integrate Snyk security findings with Azure Boards — create and maintain work items for qualifying findings, sync with Snyk lifecycle, enrich tickets with metadata, stable Snyk↔work-item mapping, and observability.
+
+  Azure architecture (reference):
+  - Synchronization middleware: Azure Container Apps (ACA), scheduled sync (cron/periodic); each run uses Snyk Issues API, reconciles with Azure Table Storage, calls Azure DevOps Work Item Tracking APIs.
+  - State: Azure Table Storage for durable mapping (Snyk group/org/project/issue IDs, issue status, Azure DevOps org/project/work item ID); supports reopen policy (P2-FR-8).
+  - Secrets: Azure Key Vault for SNYK_TOKEN and Azure DevOps PAT; ACA references as env vars — never embed in code or images.
+  - Identity: system-assigned managed identity; application code uses DefaultAzureCredential for Key Vault, Table Storage, Files/Blob (config), and other Entra-protected endpoints.
+  - Operator config: non-secret YAML only in Azure (Azure Files mount or Blob download at startup); hot-reload out of scope unless specified; restart/revision to reload. Secrets stay in Key Vault.
+  - Observability: ACA OpenTelemetry agent + Application Insights / Log Analytics; custom OTel metric for sync latency (P2-FR-6.3). Alerts: e.g. avg sync duration > 300s; log search for "Authentication Failed" > 3 times in 10 minutes.
+
+  APIs:
+  - Snyk: REST Issues API (JSON:API), base https://api.snyk.io/rest 
+  - Azure DevOps: Work Item Tracking api-version 7.1 unless preview noted; PAT from Key Vault; create/update via JSON Patch; comments for audit (P2-FR-9).
+
+  Functional requirements (summary — full detail in openspec/specs/, e.g. sync-lifecycle, observability): High/Critical work item creation (P2-FR-1); default Unassigned (P2-FR-2); close on fix/ignore (P2-FR-3/4); reopen → new work item (P2-FR-8); audit comments on status change (P2-FR-9); global toggle for creating new items (P2-FR-11); rich finding metadata (P2-FR-5.x); stable mapping (P2-FR-7); configurable tags (P2-FR-10); health, logging, latency thresholds (P2-FR-6.x).
+
+  Python engineering (mandatory for implementation):
+  - Target Python 3.12+. Use uv for dependency management.
+  - CLI: argparse (stdlib). Secrets via environment variables only; never commit or log tokens/credentials.
+  - Style: PEP 8, PEP 257 docstrings on modules and public functions/methods. Prefer Python standard library; extra dependencies must be vetted with Snyk Open Source (no high/critical) and Snyk Code (no high issues) before merge.
+  - Testing: every public and protected function/method needs unit tests covering documented behavior and reasonable edge cases.
+  - Time-sensitive logic: use current date/time in UTC.
+
+# Per-artifact rules (optional) — reinforce specs + Python guidelines in generated artifacts
+rules:
+  proposal:
+    - Align scope with openspec/specs/ (Snyk–Azure Boards sync, Azure components, P2-FR-* IDs when citing requirements).
+    - Call out non-goals explicitly when they matter (e.g. hot-reload of config if out of scope).
+  design:
+    - Prefer managed identity + DefaultAzureCredential; document where PAT/Key Vault and Table Storage fit.
+    - Reference Snyk OpenAPI path and Azure DevOps api-version 7.1 where relevant.
+  tasks:
+    - Keep tasks small and testable; separate infra/deploy concerns from application logic when useful.
+    - Include or reference unit tests for new public/protected Python surfaces.
+  specs:
+    - Use requirement IDs from openspec/specs/ (P2-FR-*) when mapping scenarios to the formal spec.

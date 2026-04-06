@@ -20,8 +20,9 @@ def test_fetch_get_without_issue_id_exits_nonzero(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """``fetch get`` with no issue id in the tail must exit non-zero."""
     monkeypatch.setenv("SNYK_TOKEN", "x")
-    code = main(["fetch", "get", "11111111-1111-1111-1111-111111111111"])
+    code = main(["fetch", "get"])
     assert code == 2
     err = capsys.readouterr().err
     assert "issue_id" in err.lower() or "requires" in err.lower()

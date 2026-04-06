@@ -1,0 +1,12 @@
+# Sample operator configuration (non-secret). Copy or pass --config data/sample-config.yaml
+# Replace placeholder values with your Snyk group and policy. Secrets (SNYK_TOKEN, Azure PAT)
+# stay in environment variables or Key Vault — never put them in this file.
+
+azure_boards:
+  create_new_work_items: true
+
+work_item_template: {}
+
+snyk:
+  group_id: "00000000-0000-0000-0000-000000000001"
+  severity_threshold: high

@@ -182,11 +182,70 @@ Replace with a concise list of what the project does.
 
 ## Configuration
 
-Replace with configuration files, CLI flags, and environment variables.
+Operator settings use a **YAML** file (non-secret policy only). **Secrets** (`SNYK_TOKEN`, Azure DevOps PAT, etc.) **must** come from environment variables or your secret store — **never** commit them in YAML.
+
+### Precedence
+
+When the same logical setting exists in more than one place, the effective value is resolved in this order (**later wins**):
+
+1. Built-in defaults  
+2. YAML configuration file  
+3. Environment variables (documented overrides below)  
+4. **CLI arguments** (highest precedence — useful for local smoke tests without editing files)
+
+For **deployments and IaC**, keep authoritative values in **YAML** (or platform-injected environment). Use **CLI overrides** mainly for **local development** and one-off commands.
+
+### Configuration file layout
+
+Top-level keys:
+
+| Key | Purpose |
+| --- | --- |
+| `azure_boards` | Azure Boards behavior, including `create_new_work_items` (boolean, default `true`) — global enable/disable for **new** work items (**P2-FR-11**). |
+| `work_item_template` | Placeholder mapping for future work item defaults (may be `{}`). |
+| `snyk` | `group_id` (string), `severity_threshold` (`low` \| `medium` \| `high` \| `critical`, default `high`), plus optional future keys. |
+
+Sections may be omitted where **defaults** apply; a full example is in **`data/sample-config.yaml`** (tracked in git).
+
+### Environment variables
+
+| Variable | Role |
+| -------- | ---- |
+| `SNYK_APP_CONFIG` | Path to the YAML file if you do not pass `--config` (CLI `--config` wins when both are set). |
+| `SNYK_GROUP_ID` | Overrides `snyk.group_id` from the file (CLI group arguments override this in turn). |
+| `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.create_new_work_items` (`true` / `false` / `1` / `0`). |
+| `SNYK_TOKEN` | **Secret:** Snyk API token (not read from YAML). |
+
+### `fetch` command and Snyk group id
+
+The **`fetch`** smoke command calls the **group-scoped** Snyk Issues API. A **non-empty group id** is **required** after merging file, environment, and CLI layers. Provide it via:
+
+- `snyk.group_id` in YAML, and/or  
+- `SNYK_GROUP_ID`, and/or  
+- **`fetch list`** positional group id or **`fetch get`** two-argument form (`group_id issue_id`), and/or  
+- **`--group-id`**
+
+If the resolved group id is empty, `fetch` exits with an error before calling the API. Run **`uv run python src/main.py fetch --help`** for the current argument layout.
 
 ### Parameter Descriptions
 
-Document each important setting: purpose, default, and examples.
+| Setting | Default | Notes |
+| ------- | ------- | ----- |
+| `azure_boards.create_new_work_items` | `true` | When `false`, sync logic must not create **new** work items (policy surface for **P2-FR-11**). |
+| `work_item_template` | `{}` | Reserved for future work item type / routing fields. |
+| `snyk.group_id` | `""` | **Required** for `fetch` (and group-scoped API use) once merged with env/CLI — use a real Snyk group UUID in production. |
+| `snyk.severity_threshold` | `high` | Minimum severity for policy; aligns with **P2-FR-1** when set to `high` or `critical`. |
+
+Example file (see also **`data/sample-config.yaml`**):
+
+```yaml
+azure_boards:
+  create_new_work_items: true
+work_item_template: {}
+snyk:
+  group_id: "00000000-0000-0000-0000-000000000001"
+  severity_threshold: high
+```
 
 ## Output Sample + Description
 

@@ -16,10 +16,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/snyk", "src/commands", "src/config"]
+packages = ["src/snyk", "src/commands", "src/config", "src/mapping_store"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/snyk", "src/commands", "src/config", "src/main.py"]
+include = ["src/snyk", "src/commands", "src/config", "src/mapping_store", "src/main.py", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

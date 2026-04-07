@@ -22,6 +22,11 @@ class SnykConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+# Default mapping persistence: local SQLite for dev/tests (see openspec design).
+DEFAULT_MAPPING_STORE: str = "sqlite"
+DEFAULT_SQLITE_PATH: str = "data/mapping_store.sqlite"
+
+
 @dataclass
 class AppConfig:
     """Full application configuration after merge."""
@@ -29,3 +34,5 @@ class AppConfig:
     azure_boards: AzureBoardsConfig
     work_item_template: dict[str, Any]
     snyk: SnykConfig
+    mapping_store: str = DEFAULT_MAPPING_STORE
+    sqlite_path: str = DEFAULT_SQLITE_PATH

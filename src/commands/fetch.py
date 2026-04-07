@@ -42,6 +42,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     fetch.add_argument(
+        "--mapping-store-sqlite-path",
+        dest="mapping_store_sqlite_path",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Override sqlite_path for mapping persistence (CLI wins over env/YAML). "
+            "See README; local dev/test only."
+        ),
+    )
+    fetch.add_argument(
         "--group-id",
         dest="group_id_flag",
         metavar="UUID",
@@ -164,6 +174,7 @@ def run_fetch(args: argparse.Namespace) -> int:
         config = load_app_config(
             config_path=args.config,
             cli_group_id=cli_gid,
+            cli_sqlite_path=args.mapping_store_sqlite_path,
         )
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)

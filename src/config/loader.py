@@ -9,13 +9,23 @@ from typing import Any, Mapping
 import yaml
 
 from config.errors import ConfigError
-from config.models import AppConfig, AzureBoardsConfig, SnykConfig
+from config.models import (
+    DEFAULT_MAPPING_STORE,
+    DEFAULT_SQLITE_PATH,
+    AppConfig,
+    AzureBoardsConfig,
+    SnykConfig,
+)
 
 SEVERITY_LEVELS: tuple[str, ...] = ("low", "medium", "high", "critical")
+
+_ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 
 _ENV_CONFIG_PATH = "SNYK_APP_CONFIG"
 _ENV_GROUP_ID = "SNYK_GROUP_ID"
 _ENV_CREATE_NEW = "AZURE_BOARDS_CREATE_NEW_WORK_ITEMS"
+_ENV_MAPPING_STORE = "MAPPING_STORE"
+_ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
 
 
 def _default_tree() -> dict[str, Any]:
@@ -23,6 +33,8 @@ def _default_tree() -> dict[str, Any]:
         "azure_boards": {"create_new_work_items": True},
         "work_item_template": {},
         "snyk": {"group_id": "", "severity_threshold": "high"},
+        "mapping_store": DEFAULT_MAPPING_STORE,
+        "sqlite_path": DEFAULT_SQLITE_PATH,
     }
 
 
@@ -51,6 +63,16 @@ def _coerce_bool(value: Any, *, field_name: str) -> bool:
     raise ConfigError(
         f"{field_name} must be a boolean (got {type(value).__name__})",
     )
+
+
+def _normalize_mapping_store(raw: str) -> str:
+    s = raw.strip().lower()
+    if s not in _ALLOWED_MAPPING_STORES:
+        allowed = ", ".join(sorted(_ALLOWED_MAPPING_STORES))
+        raise ConfigError(
+            f"mapping_store must be one of: {allowed} (got {raw!r})",
+        )
+    return s
 
 
 def _normalize_severity(raw: str) -> str:
@@ -124,6 +146,16 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             field_name="AZURE_BOARDS_CREATE_NEW_WORK_ITEMS",
         )
 
+    if _ENV_MAPPING_STORE in os.environ:
+        ms = os.environ[_ENV_MAPPING_STORE].strip()
+        if ms:
+            tree["mapping_store"] = ms
+
+    if _ENV_SQLITE_PATH in os.environ:
+        sp = os.environ[_ENV_SQLITE_PATH].strip()
+        if sp:
+            tree["sqlite_path"] = sp
+
 
 def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     """Build AppConfig from a merged tree."""
@@ -153,10 +185,23 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         field_name="azure_boards.create_new_work_items",
     )
 
+    ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
+    if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
+        ms_raw = DEFAULT_MAPPING_STORE
+    mapping_store = _normalize_mapping_store(str(ms_raw))
+
+    sp_raw = tree.get("sqlite_path", DEFAULT_SQLITE_PATH)
+    if sp_raw is None or (isinstance(sp_raw, str) and not str(sp_raw).strip()):
+        sqlite_path = DEFAULT_SQLITE_PATH
+    else:
+        sqlite_path = str(sp_raw).strip()
+
     return AppConfig(
         azure_boards=AzureBoardsConfig(create_new_work_items=create_new),
         work_item_template=dict(wit),
         snyk=SnykConfig(group_id=gid, severity_threshold=sev, extra=extra),
+        mapping_store=mapping_store,
+        sqlite_path=sqlite_path,
     )
 
 
@@ -164,11 +209,13 @@ def load_app_config(
     *,
     config_path: str | None,
     cli_group_id: str | None = None,
+    cli_sqlite_path: str | None = None,
 ) -> AppConfig:
     """
-    Load merged configuration: defaults → YAML file (if path) → env → CLI group_id.
+    Load merged configuration: defaults → YAML file (if path) → env → CLI overrides.
 
     ``cli_group_id`` is the top layer for ``snyk.group_id`` when non-empty.
+    ``cli_sqlite_path`` is the top layer for ``sqlite_path`` when non-empty.
     """
     tree = _default_tree()
     path = resolve_config_path(config_path)
@@ -181,4 +228,6 @@ def load_app_config(
         if not isinstance(tree["snyk"], dict):
             tree["snyk"] = {}
         tree["snyk"]["group_id"] = cli_group_id.strip()
+    if cli_sqlite_path is not None and cli_sqlite_path.strip():
+        tree["sqlite_path"] = cli_sqlite_path.strip()
     return _tree_to_app_config(tree)

@@ -204,8 +204,12 @@ Top-level keys:
 | `azure_boards` | Azure Boards behavior, including `create_new_work_items` (boolean, default `true`) — global enable/disable for **new** work items (**P2-FR-11**). |
 | `work_item_template` | Placeholder mapping for future work item defaults (may be `{}`). |
 | `snyk` | `group_id` (string), `severity_threshold` (`low` \| `medium` \| `high` \| `critical`, default `high`), plus optional future keys. |
+| `mapping_store` | Where Snyk↔work-item mappings are persisted: `sqlite` (local dev/tests) or reserved `azure_table` (production-style; not implemented in this repo yet). Default: `sqlite`. |
+| `sqlite_path` | Filesystem path to the SQLite file when `mapping_store` is `sqlite`. Default: `data/mapping_store.sqlite`. **Do not put secrets** (tokens, PATs) in this path or database file — use environment / Key Vault only. |
 
 Sections may be omitted where **defaults** apply; a full example is in **`data/sample-config.yaml`** (tracked in git).
+
+**Local SQLite schema (optional):** from the repository root, run `uv run python scripts/init_mapping_store.py --config data/sample-config.yaml` (or pass `--mapping-store-sqlite-path /path/to/file.sqlite`). The script is idempotent and uses the same `sqlite_path` resolution as the app (**defaults → YAML → env → CLI**).
 
 ### Environment variables
 
@@ -214,6 +218,8 @@ Sections may be omitted where **defaults** apply; a full example is in **`data/s
 | `SNYK_APP_CONFIG` | Path to the YAML file if you do not pass `--config` (CLI `--config` wins when both are set). |
 | `SNYK_GROUP_ID` | Overrides `snyk.group_id` from the file (CLI group arguments override this in turn). |
 | `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.create_new_work_items` (`true` / `false` / `1` / `0`). |
+| `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
+| `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
 | `SNYK_TOKEN` | **Secret:** Snyk API token (not read from YAML). |
 
 ### `fetch` command and Snyk group id
@@ -227,6 +233,8 @@ The **`fetch`** smoke command calls the **group-scoped** Snyk Issues API. A **no
 
 If the resolved group id is empty, `fetch` exits with an error before calling the API. Run **`uv run python src/main.py fetch --help`** for the current argument layout.
 
+**`fetch`** also accepts **`--mapping-store-sqlite-path`** so you can override the SQLite mapping file path for that process without editing YAML (same precedence layer as other CLI overrides for `sqlite_path`).
+
 ### Parameter Descriptions
 
 | Setting | Default | Notes |
@@ -235,6 +243,8 @@ If the resolved group id is empty, `fetch` exits with an error before calling th
 | `work_item_template` | `{}` | Reserved for future work item type / routing fields. |
 | `snyk.group_id` | `""` | **Required** for `fetch` (and group-scoped API use) once merged with env/CLI — use a real Snyk group UUID in production. |
 | `snyk.severity_threshold` | `high` | Minimum severity for policy; aligns with **P2-FR-1** when set to `high` or `critical`. |
+| `mapping_store` | `sqlite` | Use `sqlite` for local mapping persistence. `azure_table` is reserved; selecting it without a working adapter causes a clear error (no silent fallback to SQLite). |
+| `sqlite_path` | `data/mapping_store.sqlite` | SQLite file path for mappings (non-secret). Do not store tokens or PATs here. |
 
 Example file (see also **`data/sample-config.yaml`**):
 
@@ -245,6 +255,8 @@ work_item_template: {}
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"
   severity_threshold: high
+mapping_store: sqlite
+sqlite_path: data/mapping_store.sqlite
 ```
 
 ## Output Sample + Description

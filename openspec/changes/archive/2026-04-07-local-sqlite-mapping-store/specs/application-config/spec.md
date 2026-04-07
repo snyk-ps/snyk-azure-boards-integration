@@ -1,8 +1,4 @@
-# Application configuration — YAML, defaults, env, CLI
-
-Normative requirements for operator YAML configuration, loading, merge precedence, CLI wiring, and README/sample documentation.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: YAML configuration file format
 
@@ -32,59 +28,6 @@ An operator **MAY omit** any top-level key (or inner optional key) for which thi
 
 ---
 
-### Requirement: Azure Boards global creation toggle
-
-Under `azure_boards`, the configuration SHALL include **`create_new_work_items`**, a boolean that **globally enables or disables creation of new Azure Boards work items** (satisfies **P2-FR-11**). When set to `false`, the application MUST NOT create new work items for qualifying findings; other behaviors (e.g. updating or closing existing mapped items) SHALL be defined by sync logic in later changes and are not required to be implemented in this change beyond exposing the setting.
-
-#### Scenario: Creation disabled
-
-- **WHEN** `azure_boards.create_new_work_items` is `false`
-- **THEN** downstream sync logic SHALL treat new work item creation as disabled for policy decisions that read this setting
-
-#### Scenario: Creation enabled
-
-- **WHEN** `azure_boards.create_new_work_items` is `true`
-- **THEN** downstream sync logic MAY create new work items subject to other requirements (e.g. **P2-FR-1**)
-
----
-
-### Requirement: Work item template section
-
-The **`work_item_template`** value SHALL be a **mapping** (YAML dictionary). It MAY be empty. This change SHALL NOT require any specific inner keys; reserved structure for future work item type, area path, or field defaults MAY be documented in later proposals. The loader SHALL accept an empty mapping and preserve unknown keys for forward compatibility where the YAML library permits.
-
-#### Scenario: Empty template
-
-- **WHEN** `work_item_template` is `{}` or omitted per defaulting rules
-- **THEN** loading SHALL succeed and expose an empty or default template mapping without error
-
----
-
-### Requirement: Snyk section with group ID and severity threshold
-
-Under **`snyk`**, the configuration defines at least:
-
-- **`group_id`**: String identifying the Snyk **group** (UUID string as used by the Snyk REST Issues API for group-scoped operations). The **resolved** value after applying **defaults → file → environment → CLI** (see precedence requirement) MUST be **non-empty** before issuing **group-scoped** Snyk Issues API requests (list/get by group). **Fetching issues from Snyk** in this product’s scope uses group scope; therefore **`fetch`** (and any other command that calls those APIs) SHALL fail with a clear, non-secret error if `group_id` is missing or empty at execution time. **Help-only** invocations (e.g. `--help`) SHALL NOT require `group_id`.
-- **`severity_threshold`**: A string severity level used as the **minimum** threshold for policy (ordering: `low` < `medium` < `high` < `critical`). The default applied when the key is omitted (after defaulting rules) SHALL be **`high`**, consistent with **P2-FR-1** (High/Critical) as the baseline product behavior.
-
-Additional keys under **`snyk`** MAY be introduced in future changes; the loader SHALL allow forward-compatible preservation or ignore rules as documented in `design.md` for unknown keys (at minimum, documented behavior for known keys).
-
-#### Scenario: Group ID present after merge
-
-- **WHEN** the merged `snyk.group_id` is a non-empty string
-- **THEN** group-scoped Snyk Issues API calls MAY use that value
-
-#### Scenario: Fetch without group ID
-
-- **WHEN** the user runs a command that performs group-scoped Snyk Issues API calls (e.g. **`fetch`**) and the resolved `group_id` is missing or empty
-- **THEN** the command SHALL exit without issuing that API call, with a clear error that does not include secrets
-
-#### Scenario: Severity threshold default
-
-- **WHEN** `snyk.severity_threshold` is omitted from the file and not overridden by a higher-precedence layer
-- **THEN** the effective severity threshold SHALL be **`high`**
-
----
-
 ### Requirement: Configuration loading and defaults
 
 The application SHALL load YAML from a **filesystem path** supplied via CLI (e.g. `--config`) and/or a documented environment variable for the path, as implemented per `design.md`. After parsing, the implementation SHALL apply **defaults** for optional keys (including `azure_boards.create_new_work_items` defaulting to **`true`**, `snyk.severity_threshold` defaulting to **`high`**, **`mapping_store`** defaulting to **`sqlite`**, and **`sqlite_path`** defaulting to **`data/mapping_store.sqlite`** unless specified otherwise in `design.md`), then merge **environment** and **CLI** layers per the **Precedence** requirement before validating command-specific requirements (e.g. non-empty `group_id` for **`fetch`**). The loader SHALL produce a clear, non-secret error when the file is missing, unreadable, or not valid YAML.
@@ -98,24 +41,6 @@ The application SHALL load YAML from a **filesystem path** supplied via CLI (e.g
 
 - **WHEN** the file content is not valid YAML
 - **THEN** loading SHALL fail with an error that does not include secret material
-
----
-
-### Requirement: Precedence — defaults, file, environment, CLI
-
-For any setting that can be supplied through more than one mechanism, the implementation SHALL resolve values in this order: **built-in defaults → YAML file → environment variables → CLI arguments**. When the same logical setting is present at more than one layer, **the later layer wins** (**CLI overrides** environment overrides file overrides defaults). The **README** SHALL document this chain and SHALL state that **managed YAML** (and platform-injected environment) is the **intended source of truth** for deployments and **IaC**, while **CLI flags** are primarily for **local testing and smoke workflows**.
-
-Secrets SHALL continue to come **only** from environment variables or secret stores, not from YAML.
-
-#### Scenario: CLI overrides file for local testing
-
-- **WHEN** `snyk.group_id` is set in the YAML file and the user also passes a CLI argument that sets the same logical value
-- **THEN** the effective value for that process SHALL be the CLI value
-
-#### Scenario: Path from environment
-
-- **WHEN** the operator sets the documented environment variable for config file path
-- **THEN** the application SHALL determine the file path per the precedence rules (CLI path flag overriding env when both are defined, if applicable)
 
 ---
 
@@ -161,6 +86,8 @@ The repository SHALL include at least one **sample** YAML configuration file und
 - **THEN** it SHALL mention the `data/` sample file path (or glob) so users can run the CLI against it without authoring YAML from scratch
 
 ---
+
+## ADDED Requirements
 
 ### Requirement: Mapping store environment and CLI overrides
 

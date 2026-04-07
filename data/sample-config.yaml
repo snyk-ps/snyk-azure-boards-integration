@@ -10,3 +10,7 @@ work_item_template: {}
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"
   severity_threshold: high
+
+# Local mapping DB for dev/tests (non-secret). Do not put tokens or PATs in this path.
+mapping_store: sqlite
+sqlite_path: data/mapping_store.sqlite

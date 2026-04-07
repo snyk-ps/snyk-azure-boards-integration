@@ -129,3 +129,64 @@ def test_load_app_config_config_path_env_precedence(
     monkeypatch.setenv("SNYK_APP_CONFIG", str(env_file))
     c = load_app_config(config_path=str(cli_file), cli_group_id=None)
     assert c.snyk.group_id == "right"
+
+
+def test_mapping_store_defaults_no_file() -> None:
+    c = load_app_config(config_path=None, cli_group_id=None)
+    assert c.mapping_store == "sqlite"
+    assert c.sqlite_path == "data/mapping_store.sqlite"
+
+
+def test_mapping_store_from_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: sqlite\nsqlite_path: custom/db.sqlite\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.mapping_store == "sqlite"
+    assert c.sqlite_path == "custom/db.sqlite"
+
+
+def test_mapping_store_env_overrides_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: sqlite\nsqlite_path: from-yaml.sqlite\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAPPING_STORE", "sqlite")
+    monkeypatch.setenv("MAPPING_STORE_SQLITE_PATH", "from-env.sqlite")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.sqlite_path == "from-env.sqlite"
+
+
+def test_sqlite_path_cli_overrides_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("sqlite_path: from-yaml.sqlite\n", encoding="utf-8")
+    monkeypatch.setenv("MAPPING_STORE_SQLITE_PATH", "from-env.sqlite")
+    c = load_app_config(
+        config_path=str(p),
+        cli_group_id=None,
+        cli_sqlite_path="from-cli.sqlite",
+    )
+    assert c.sqlite_path == "from-cli.sqlite"
+
+
+def test_empty_sqlite_path_in_yaml_uses_default(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("sqlite_path: \"\"\n", encoding="utf-8")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.sqlite_path == "data/mapping_store.sqlite"
+
+
+def test_invalid_mapping_store_in_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("mapping_store: cosmos\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="mapping_store"):
+        load_app_config(config_path=str(p), cli_group_id=None)

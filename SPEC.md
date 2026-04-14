@@ -9,4 +9,5 @@ Normative specifications live under **`openspec/specs/`** by capability. Project
 | Observability (P2-FR-6.x, logs, alerts) | [`openspec/specs/observability/spec.md`](openspec/specs/observability/spec.md) |
 | Integration APIs (Snyk Issues, Azure DevOps WIT) | [`openspec/specs/integration-apis/spec.md`](openspec/specs/integration-apis/spec.md) |
 | Snyk issues client (Python REST client, CLI smoke) | [`openspec/specs/snyk-issues-client/spec.md`](openspec/specs/snyk-issues-client/spec.md) |
+| Azure DevOps client (Python WIT client, CLI smoke) | [`openspec/specs/azure-devops-client/spec.md`](openspec/specs/azure-devops-client/spec.md) |
 | Application configuration (YAML, defaults, env, CLI merge) | [`openspec/specs/application-config/spec.md`](openspec/specs/application-config/spec.md) |

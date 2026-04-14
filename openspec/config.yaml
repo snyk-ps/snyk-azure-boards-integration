@@ -15,7 +15,7 @@ context: |
 
   APIs:
   - Snyk: REST Issues API (JSON:API), base https://api.snyk.io/rest 
-  - Azure DevOps: Work Item Tracking api-version 7.1 unless preview noted; PAT from Key Vault; create/update via JSON Patch; comments for audit (P2-FR-9).
+  - Azure DevOps: Work Item Tracking api-version 7.1 unless preview noted; PAT from Key Vault; create/update via JSON Patch; comments for audit (P2-FR-9). Normative Python client: openspec/specs/azure-devops-client/spec.md.
 
   Functional requirements (summary — full detail in openspec/specs/, e.g. sync-lifecycle, observability): High/Critical work item creation (P2-FR-1); default Unassigned (P2-FR-2); close on fix/ignore (P2-FR-3/4); reopen → new work item (P2-FR-8); audit comments on status change (P2-FR-9); global toggle for creating new items (P2-FR-11); rich finding metadata (P2-FR-5.x); stable mapping (P2-FR-7); configurable tags (P2-FR-10); health, logging, latency thresholds (P2-FR-6.x).
 

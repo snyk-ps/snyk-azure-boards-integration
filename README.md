@@ -29,6 +29,7 @@ This section provides a high-level overview of the project. It should clearly an
 - [Usage](#usage)
 - [Features](#features)
 - [Configuration](#configuration)
+  - [Azure DevOps personal access token (PAT)](#azure-devops-personal-access-token-pat)
   - [Parameter Descriptions](#parameter-descriptions)
 - [Output Sample + Description](#output-sample--description)
 - [Testing](#testing)
@@ -224,6 +225,29 @@ Sections may be omitted where **defaults** apply; a full example is in **`data/s
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
 | `SNYK_TOKEN` | **Secret:** Snyk API token (not read from YAML). |
+
+### Azure DevOps personal access token (PAT)
+
+The integration calls Azure DevOps REST APIs using a **personal access token (PAT)**. **Do not** commit a PAT to version control or store it in YAML; set it only via the **`AZURE_DEVOPS_PAT`** environment variable. For production, inject the value from your secret store into the process environment (for example Azure Key Vault backing app settings); high-level runtime and deployment notes are in [Deployment](#deployment).
+
+**Create a PAT**
+
+1. Open **[Azure DevOps](https://dev.azure.com)** and sign in to the organization you use with this project.
+2. Open **User settings** from your profile menu (avatar or initials in the upper-right corner).
+3. Select **Personal access tokens**.
+4. Choose **+ New Token** (or **New Token**).
+5. Enter a name, pick the organization (or **All accessible organizations** if your policy allows), set an expiration, then under **Scopes** choose the **Work Items** permissions below.
+
+**Scopes**
+
+| What you are doing | Work Items permission in Azure DevOps |
+| --- | --- |
+| **`azure-devops-smoke`** and other **read-only** validation | **Read** — often labeled **Work Items: Read** or **Work items (read)** in the PAT dialog |
+| **Create**, **update**, and **comment** on work items (sync and similar flows) | **Read & write** — often **Work Items: Read & write** or **Work items (read & write)** |
+
+Labels can vary slightly by Azure DevOps version; if yours differs, match the intent (read-only vs. changing work items) and confirm against Microsoft’s PAT documentation.
+
+Official documentation: [Use personal access tokens to authenticate](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops) (Microsoft Learn).
 
 ### `azure-devops-smoke` command
 

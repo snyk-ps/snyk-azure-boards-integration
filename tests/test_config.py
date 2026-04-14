@@ -33,6 +33,8 @@ def test_load_yaml_file_rejects_null_byte() -> None:
 def test_load_app_config_defaults_no_file() -> None:
     c = load_app_config(config_path=None, cli_group_id=None)
     assert c.azure_boards.create_new_work_items is True
+    assert c.azure_boards.organization == ""
+    assert c.azure_boards.project == ""
     assert c.snyk.severity_threshold == "high"
     assert c.snyk.group_id == ""
     assert c.work_item_template == {}
@@ -190,3 +192,30 @@ def test_invalid_mapping_store_in_yaml(tmp_path: Path) -> None:
     p.write_text("mapping_store: cosmos\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="mapping_store"):
         load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_azure_boards_org_project_from_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  organization: my-org\n  project: my-proj\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.organization == "my-org"
+    assert c.azure_boards.project == "my-proj"
+
+
+def test_azure_boards_org_project_env_overrides_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  organization: from-yaml\n  project: from-yaml-p\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AZURE_BOARDS_ORGANIZATION", "from-env")
+    monkeypatch.setenv("AZURE_BOARDS_PROJECT", "from-env-p")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.organization == "from-env"
+    assert c.azure_boards.project == "from-env-p"

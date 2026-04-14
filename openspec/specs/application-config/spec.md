@@ -12,7 +12,7 @@ The following **top-level keys** define the configuration namespaces (after load
 
 | Key | Purpose |
 |-----|---------|
-| `azure_boards` | Settings for Azure Boards behavior, including global creation enablement (**P2-FR-11**). |
+| `azure_boards` | Settings for Azure Boards behavior, including global creation enablement (**P2-FR-11**), and non-secret Azure DevOps routing (**`organization`**, **`project`**) for REST calls. |
 | `work_item_template` | Placeholder mapping for future work item defaults (type, fields, routing); MAY be empty. |
 | `snyk` | Snyk integration settings, including **group ID** and **severity threshold**; additional keys MAY be added in later changes. |
 | `mapping_store` | Backend for Snyk↔work-item mapping persistence (**P2-FR-7**): **`sqlite`** for local dev/tests, or reserved **`azure_table`** for production-style storage (see `azure-platform`). |
@@ -45,6 +45,24 @@ Under `azure_boards`, the configuration SHALL include **`create_new_work_items`*
 
 - **WHEN** `azure_boards.create_new_work_items` is `true`
 - **THEN** downstream sync logic MAY create new work items subject to other requirements (e.g. **P2-FR-1**)
+
+---
+
+### Requirement: Azure DevOps routing under azure_boards
+
+Under **`azure_boards`**, the configuration SHALL include **`organization`** and **`project`**, each a **non-secret** string used as Azure DevOps routing inputs (Azure DevOps organization name and project name or id as accepted by the REST path templates in `openspec/specs/integration-apis/spec.md`). These values SHALL NOT be used to transport secrets. The **`azure-devops-client`** and related commands SHALL obtain these fields from merged configuration or explicit CLI overrides per this capability’s precedence rules; the integration package SHALL NOT read the YAML file directly.
+
+The sample configuration file under **`data/`** and the **`README.md`** configuration documentation SHALL include **`azure_boards.organization`** and **`azure_boards.project`** with placeholder non-secret values so operators can run DevOps smoke and future sync flows without inventing keys.
+
+#### Scenario: Sample lists routing keys
+
+- **WHEN** a developer opens the tracked sample YAML under `data/`
+- **THEN** it SHALL include `azure_boards.organization` and `azure_boards.project` alongside existing `azure_boards` keys
+
+#### Scenario: README documents routing keys
+
+- **WHEN** an operator reads the README Configuration / parameter descriptions
+- **THEN** they SHALL find `azure_boards.organization` and `azure_boards.project` described as non-secret routing fields for Azure DevOps
 
 ---
 

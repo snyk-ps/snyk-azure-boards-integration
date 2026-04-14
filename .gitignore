@@ -179,3 +179,6 @@ cython_debug/
 
 # SQLite mapping store files
 data/*.sqlite
+
+# Local configuration files
+data/*.local*

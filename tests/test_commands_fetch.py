@@ -1,6 +1,6 @@
 """Tests for ``commands.fetch`` wiring."""
 
-from commands.fetch import build_parser
+from commands import build_parser
 
 
 def test_fetch_parser_list_positional() -> None:

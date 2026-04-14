@@ -24,13 +24,19 @@ _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 _ENV_CONFIG_PATH = "SNYK_APP_CONFIG"
 _ENV_GROUP_ID = "SNYK_GROUP_ID"
 _ENV_CREATE_NEW = "AZURE_BOARDS_CREATE_NEW_WORK_ITEMS"
+_ENV_AZURE_BOARDS_ORGANIZATION = "AZURE_BOARDS_ORGANIZATION"
+_ENV_AZURE_BOARDS_PROJECT = "AZURE_BOARDS_PROJECT"
 _ENV_MAPPING_STORE = "MAPPING_STORE"
 _ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
 
 
 def _default_tree() -> dict[str, Any]:
     return {
-        "azure_boards": {"create_new_work_items": True},
+        "azure_boards": {
+            "create_new_work_items": True,
+            "organization": "",
+            "project": "",
+        },
         "work_item_template": {},
         "snyk": {"group_id": "", "severity_threshold": "high"},
         "mapping_store": DEFAULT_MAPPING_STORE,
@@ -146,6 +152,22 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             field_name="AZURE_BOARDS_CREATE_NEW_WORK_ITEMS",
         )
 
+    if _ENV_AZURE_BOARDS_ORGANIZATION in os.environ:
+        org = os.environ[_ENV_AZURE_BOARDS_ORGANIZATION].strip()
+        if org:
+            tree.setdefault("azure_boards", {})
+            if not isinstance(tree["azure_boards"], dict):
+                tree["azure_boards"] = {}
+            tree["azure_boards"]["organization"] = org
+
+    if _ENV_AZURE_BOARDS_PROJECT in os.environ:
+        proj = os.environ[_ENV_AZURE_BOARDS_PROJECT].strip()
+        if proj:
+            tree.setdefault("azure_boards", {})
+            if not isinstance(tree["azure_boards"], dict):
+                tree["azure_boards"] = {}
+            tree["azure_boards"]["project"] = proj
+
     if _ENV_MAPPING_STORE in os.environ:
         ms = os.environ[_ENV_MAPPING_STORE].strip()
         if ms:
@@ -185,6 +207,9 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         field_name="azure_boards.create_new_work_items",
     )
 
+    org = str(ab_raw.get("organization", "") or "").strip()
+    proj = str(ab_raw.get("project", "") or "").strip()
+
     ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
     if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
         ms_raw = DEFAULT_MAPPING_STORE
@@ -197,7 +222,11 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         sqlite_path = str(sp_raw).strip()
 
     return AppConfig(
-        azure_boards=AzureBoardsConfig(create_new_work_items=create_new),
+        azure_boards=AzureBoardsConfig(
+            create_new_work_items=create_new,
+            organization=org,
+            project=proj,
+        ),
         work_item_template=dict(wit),
         snyk=SnykConfig(group_id=gid, severity_threshold=sev, extra=extra),
         mapping_store=mapping_store,

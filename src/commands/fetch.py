@@ -13,14 +13,9 @@ from snyk.client import GroupIssueListParams, IssuesClient
 from snyk.errors import SnykApiError
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the root argument parser."""
-    parser = argparse.ArgumentParser(
-        description="Snyk — Azure Boards integration.",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    fetch = sub.add_parser(
+def register_fetch_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``fetch`` subcommand on ``subparsers``."""
+    fetch = subparsers.add_parser(
         "fetch",
         help=(
             "Fetch issues from the Snyk REST API (smoke test; uses SNYK_TOKEN). "
@@ -94,7 +89,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional status filter (Snyk API).",
     )
-    return parser
 
 
 def _parse_fetch_tail(action: str, tail: list[str]) -> tuple[str | None, str | None]:

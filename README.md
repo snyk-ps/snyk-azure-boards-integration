@@ -201,7 +201,7 @@ Top-level keys:
 
 | Key | Purpose |
 | --- | --- |
-| `azure_boards` | Azure Boards behavior, including `create_new_work_items` (boolean, default `true`) — global enable/disable for **new** work items (**P2-FR-11**). |
+| `azure_boards` | Azure Boards behavior, including `create_new_work_items` (boolean, default `true`) — global enable/disable for **new** work items (**P2-FR-11**). Also `organization` and `project` (non-secret strings) for Azure DevOps REST routing used by **`azure-devops-smoke`** and future sync. |
 | `work_item_template` | Placeholder mapping for future work item defaults (may be `{}`). |
 | `snyk` | `group_id` (string), `severity_threshold` (`low` \| `medium` \| `high` \| `critical`, default `high`), plus optional future keys. |
 | `mapping_store` | Where Snyk↔work-item mappings are persisted: `sqlite` (local dev/tests) or reserved `azure_table` (production-style; not implemented in this repo yet). Default: `sqlite`. |
@@ -218,9 +218,25 @@ Sections may be omitted where **defaults** apply; a full example is in **`data/s
 | `SNYK_APP_CONFIG` | Path to the YAML file if you do not pass `--config` (CLI `--config` wins when both are set). |
 | `SNYK_GROUP_ID` | Overrides `snyk.group_id` from the file (CLI group arguments override this in turn). |
 | `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.create_new_work_items` (`true` / `false` / `1` / `0`). |
+| `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
+| `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
+| `AZURE_DEVOPS_PAT` | **Secret:** Azure DevOps personal access token (not read from YAML or CLI flags). |
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
 | `SNYK_TOKEN` | **Secret:** Snyk API token (not read from YAML). |
+
+### `azure-devops-smoke` command
+
+The **`azure-devops-smoke`** command performs a **single read-only** `get_work_item` call to validate connectivity, authentication, and response parsing. It reads **`azure_boards.organization`** and **`azure_boards.project`** from merged configuration (YAML and/or `AZURE_BOARDS_ORGANIZATION` / `AZURE_BOARDS_PROJECT`) and requires **`AZURE_DEVOPS_PAT`** in the environment (**do not** pass the PAT on the command line).
+
+Example:
+
+```bash
+export AZURE_DEVOPS_PAT="***"
+uv run python src/main.py azure-devops-smoke --config data/sample-config.yaml --work-item-id 12345
+```
+
+Run **`uv run python src/main.py azure-devops-smoke --help`** for flags. This command does **not** create, update, or add comments by default.
 
 ### `fetch` command and Snyk group id
 
@@ -240,6 +256,8 @@ If the resolved group id is empty, `fetch` exits with an error before calling th
 | Setting | Default | Notes |
 | ------- | ------- | ----- |
 | `azure_boards.create_new_work_items` | `true` | When `false`, sync logic must not create **new** work items (policy surface for **P2-FR-11**). |
+| `azure_boards.organization` | `""` | Azure DevOps organization name for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`**. |
+| `azure_boards.project` | `""` | Azure DevOps project name or id for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`**. |
 | `work_item_template` | `{}` | Reserved for future work item type / routing fields. |
 | `snyk.group_id` | `""` | **Required** for `fetch` (and group-scoped API use) once merged with env/CLI — use a real Snyk group UUID in production. |
 | `snyk.severity_threshold` | `high` | Minimum severity for policy; aligns with **P2-FR-1** when set to `high` or `critical`. |
@@ -251,6 +269,8 @@ Example file (see also **`data/sample-config.yaml`**):
 ```yaml
 azure_boards:
   create_new_work_items: true
+  organization: "your-azure-devops-org"
+  project: "your-azure-devops-project"
 work_item_template: {}
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"

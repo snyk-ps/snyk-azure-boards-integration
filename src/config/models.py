@@ -11,6 +11,8 @@ class AzureBoardsConfig:
     """Azure Boards-related settings."""
 
     create_new_work_items: bool = True
+    organization: str = ""
+    project: str = ""
 
 
 @dataclass

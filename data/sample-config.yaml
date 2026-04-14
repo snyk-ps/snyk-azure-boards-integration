@@ -4,6 +4,8 @@
 
 azure_boards:
   create_new_work_items: true
+  organization: "your-azure-devops-org"
+  project: "your-azure-devops-project"
 
 work_item_template: {}
 

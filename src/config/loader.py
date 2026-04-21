@@ -36,6 +36,9 @@ def _default_tree() -> dict[str, Any]:
             "create_new_work_items": True,
             "organization": "",
             "project": "",
+            "work_item_type": "Task",
+            "work_item_state_active": "New",
+            "work_item_state_closed": "Closed",
         },
         "work_item_template": {},
         "snyk": {"group_id": "", "severity_threshold": "high"},
@@ -79,6 +82,21 @@ def _normalize_mapping_store(raw: str) -> str:
             f"mapping_store must be one of: {allowed} (got {raw!r})",
         )
     return s
+
+
+def _azure_boards_non_secret_str(
+    ab_raw: dict[str, Any],
+    key: str,
+    *,
+    default: str,
+) -> str:
+    """Read string from ``azure_boards``; empty string is preserved (sync validates)."""
+    if key not in ab_raw:
+        return default
+    val = ab_raw[key]
+    if val is None:
+        return ""
+    return str(val).strip()
 
 
 def _normalize_severity(raw: str) -> str:
@@ -210,6 +228,16 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     org = str(ab_raw.get("organization", "") or "").strip()
     proj = str(ab_raw.get("project", "") or "").strip()
 
+    wit_type = _azure_boards_non_secret_str(
+        ab_raw, "work_item_type", default="Task"
+    )
+    wit_active = _azure_boards_non_secret_str(
+        ab_raw, "work_item_state_active", default="New"
+    )
+    wit_closed = _azure_boards_non_secret_str(
+        ab_raw, "work_item_state_closed", default="Closed"
+    )
+
     ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
     if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
         ms_raw = DEFAULT_MAPPING_STORE
@@ -226,6 +254,9 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             create_new_work_items=create_new,
             organization=org,
             project=proj,
+            work_item_type=wit_type,
+            work_item_state_active=wit_active,
+            work_item_state_closed=wit_closed,
         ),
         work_item_template=dict(wit),
         snyk=SnykConfig(group_id=gid, severity_threshold=sev, extra=extra),

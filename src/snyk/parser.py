@@ -49,23 +49,42 @@ def parse_single_issue_document(doc: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _coerce_ignored_for_record(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return False
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("true", "1", "yes", "on")
+    return bool(raw)
+
+
 def normalized_issue_record(resource: Mapping[str, Any]) -> dict[str, Any]:
     """Map a JSON:API issue resource to a flat record for sync and CLI output.
 
     Keys are included only when present in the resource: ``org_id``,
-    ``project_id``, ``issue_id``, ``created_at``, ``severity``. Optional
-    relationships (``organization``, ``scan_item``) or attributes may be absent
-    in partial payloads; omitted keys mean unknown/missing in that response.
+    ``project_id``, ``issue_id``, ``created_at``, ``severity``, ``status``,
+    ``ignored``, and ``issue_attributes`` (copy of ``attributes``) when present.
+    Optional relationships (``organization``, ``scan_item``) or attributes may
+    be absent in partial payloads; omitted keys mean unknown/missing in that response.
     """
     out: dict[str, Any] = {}
+    rid = resource.get("id")
+    if rid is not None:
+        out["rest_issue_id"] = str(rid)
     attrs = resource.get("attributes")
     if isinstance(attrs, dict):
+        out["issue_attributes"] = dict(attrs)
         if "key" in attrs:
             out["issue_id"] = attrs["key"]
         if "created_at" in attrs:
             out["created_at"] = attrs["created_at"]
         if "effective_severity_level" in attrs:
             out["severity"] = attrs["effective_severity_level"]
+        if "status" in attrs:
+            out["status"] = attrs["status"]
+        if "ignored" in attrs:
+            out["ignored"] = _coerce_ignored_for_record(attrs.get("ignored"))
     rel = resource.get("relationships")
     if isinstance(rel, dict):
         org = rel.get("organization")

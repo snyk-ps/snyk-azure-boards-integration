@@ -16,6 +16,18 @@ def test_fetch_without_token_exits_nonzero(
     assert "SNYK_TOKEN" in err
 
 
+def test_sync_without_token_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("SNYK_TOKEN", raising=False)
+    monkeypatch.delenv("AZURE_DEVOPS_PAT", raising=False)
+    code = main(["sync", "--config", "data/sample-config.yaml"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "SNYK_TOKEN" in err
+
+
 def test_fetch_get_without_issue_id_exits_nonzero(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

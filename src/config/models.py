@@ -13,6 +13,9 @@ class AzureBoardsConfig:
     create_new_work_items: bool = True
     organization: str = ""
     project: str = ""
+    work_item_type: str = "Task"
+    work_item_state_active: str = "New"
+    work_item_state_closed: str = "Closed"
 
 
 @dataclass

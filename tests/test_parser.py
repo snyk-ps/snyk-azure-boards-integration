@@ -42,10 +42,15 @@ def test_parse_single_issue_document_missing() -> None:
 
 def test_normalized_issue_record_full() -> None:
     resource = {
+        "id": "uuid-1",
         "attributes": {
             "key": "issue-key",
             "created_at": "2025-04-01T12:00:00Z",
             "effective_severity_level": "critical",
+            "status": "open",
+            "ignored": False,
+            "title": "T",
+            "type": "package_vulnerability",
         },
         "relationships": {
             "organization": {"data": {"id": "o1"}},
@@ -53,13 +58,15 @@ def test_normalized_issue_record_full() -> None:
         },
     }
     rec = normalized_issue_record(resource)
-    assert rec == {
-        "issue_id": "issue-key",
-        "created_at": "2025-04-01T12:00:00Z",
-        "severity": "critical",
-        "org_id": "o1",
-        "project_id": "p1",
-    }
+    assert rec["issue_id"] == "issue-key"
+    assert rec["created_at"] == "2025-04-01T12:00:00Z"
+    assert rec["severity"] == "critical"
+    assert rec["org_id"] == "o1"
+    assert rec["project_id"] == "p1"
+    assert rec["rest_issue_id"] == "uuid-1"
+    assert rec["status"] == "open"
+    assert rec["ignored"] is False
+    assert rec["issue_attributes"]["title"] == "T"
 
 
 def test_normalized_issue_record_minimal() -> None:

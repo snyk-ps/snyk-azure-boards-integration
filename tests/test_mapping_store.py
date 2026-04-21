@@ -56,14 +56,14 @@ def test_sqlite_upsert_round_trip_and_preserves_created_at(tmp_path: Path) -> No
         org_id="o",
         project_id="p",
         issue_id="i",
-        snyk_status="closed",
+        snyk_status="resolved",
         organization="ado-org",
         project="ado-proj",
         work_item_id="42",
         work_item_status="Closed",
     )
     assert second.created_at == created
-    assert second.snyk_status == "closed"
+    assert second.snyk_status == "resolved"
     assert second.updated_at >= second.created_at
 
 

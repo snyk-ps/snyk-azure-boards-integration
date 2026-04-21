@@ -30,7 +30,7 @@ The integration runs as a container on **Azure Container Apps**. It runs on a **
 | Snyk | **Org ID** | Organization that owns the project and issue. |
 | Snyk | **Project ID** | Snyk project containing the issue. |
 | Snyk | **Issue ID** | Stable identifier for the Snyk issue (primary logical key with org + project). |
-| Snyk | **Snyk status** | Issue lifecycle from Snyk: **open**, **closed**, or **ignored** (drives close-on-fix, close-on-ignore, and reopen behavior). |
+| Snyk | **Snyk status** | **Derived** lifecycle label for sync (**open**, **resolved**, **ignored**) from Issues API **`attributes.status`** and **`attributes.ignored`** per **`sync-lifecycle`** (not authoritative from `coordinates[].state`). |
 | Azure DevOps | **Organization** | Azure DevOps organization name (or id) for REST calls. |
 | Azure DevOps | **Project** | Team project containing the work item. |
 | Azure DevOps | **Work item ID** | Boards work item linked to this Snyk issue. |
@@ -82,7 +82,7 @@ The durable mapping store SHALL persist at minimum the following attributes per 
 | `org_id` | Snyk organization that owns the project and issue. |
 | `project_id` | Snyk project containing the issue. |
 | `issue_id` | Stable Snyk issue identifier. |
-| `snyk_status` | Snyk issue lifecycle (e.g. open, closed, ignored) for sync policy. |
+| `snyk_status` | **Derived** Snyk lifecycle label for sync policy and audit: exactly one of **`open`**, **`resolved`**, or **`ignored`**, computed from Issues API **`attributes.status`** and **`attributes.ignored`** per **`sync-lifecycle`** (not from `coordinates[].state`, and not a literal undocumented `closed` API status for storage). |
 | `organization` | Azure DevOps organization name or id for REST calls. |
 | `project` | Azure DevOps team project containing the work item. |
 | `work_item_id` | Azure Boards work item id linked to this Snyk issue. |
@@ -94,6 +94,11 @@ The logical identity of one **current** mapping for a Snyk issue in a given scop
 
 - **WHEN** a second insert is attempted with the same `group_id`, `org_id`, `project_id`, and `issue_id` as an existing row
 - **THEN** the store SHALL reject the duplicate per the UNIQUE constraint (or equivalent) so a single current mapping per issue-in-scope is preserved
+
+#### Scenario: snyk_status uses derived vocabulary
+
+- **WHEN** a sync run persists `snyk_status` after evaluating Snyk Issues attributes
+- **THEN** the stored value SHALL be one of `open`, `resolved`, or `ignored` as defined by **`sync-lifecycle`**, never a legacy `closed` label for Snyk API `status`
 
 ---
 

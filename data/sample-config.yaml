@@ -7,15 +7,25 @@ azure_boards:
   organization: "your-azure-devops-org"
   project: "your-azure-devops-project"
   # Work item type and Boards states must exist for your process (Agile Task vs CMMI, etc.).
-  work_item_type: Task
-  work_item_state_active: New
-  work_item_state_closed: Closed
+  defaults:
+    work_item_type: Task
+    work_item_state_active: New
+    work_item_state_closed: Closed
+    work_item_template:
+      tags:
+        - Snyk
+      # json_patch: []
 
-# Optional: tags and extra JSON Patch ops applied on sync create/update (see README).
-work_item_template:
-  tags:
-    - Snyk
-  # json_patch: []
+  # Multi-target sync (optional): each row maps one ADO org/project to one Snyk org UUID.
+  # Uncomment and edit when using org-scoped issue listing instead of a single group_id scope.
+  # org_mappings:
+  #   - organization: "your-azure-devops-org"
+  #     project: "your-azure-devops-project"
+  #     snyk_org_id: "00000000-0000-0000-0000-000000000002"
+  #     overrides:
+  #       work_item_type: Task
+  #       # work_item_template:
+  #       #   tags: ["TeamA"]
 
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"

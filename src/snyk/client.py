@@ -1,4 +1,4 @@
-"""HTTP client for Snyk REST Issues endpoints (group scope)."""
+"""HTTP client for Snyk REST Issues endpoints (group and org scope)."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def _backoff_seconds(attempt_index: int) -> float:
 
 
 class IssuesClient:
-    """Fetch issues from Snyk REST API (group scope only)."""
+    """Fetch issues from Snyk REST API (group and org scope)."""
 
     def __init__(
         self,
@@ -181,6 +181,26 @@ class IssuesClient:
         group_id: str,
         list_params: GroupIssueListParams | None = None,
     ) -> str:
+        return self._first_list_url_path(
+            f"groups/{group_id}/issues",
+            list_params,
+        )
+
+    def _first_list_url_org(
+        self,
+        org_id: str,
+        list_params: GroupIssueListParams | None = None,
+    ) -> str:
+        return self._first_list_url_path(
+            f"orgs/{org_id}/issues",
+            list_params,
+        )
+
+    def _first_list_url_path(
+        self,
+        path_segment: str,
+        list_params: GroupIssueListParams | None = None,
+    ) -> str:
         p = list_params or GroupIssueListParams()
         q: list[tuple[str, str]] = [
             ("version", SNYK_REST_API_VERSION),
@@ -198,11 +218,15 @@ class IssuesClient:
         if p.status is not None:
             q.append(("status", p.status))
         query = urlencode(q)
-        return f"{self._base_url}/groups/{group_id}/issues?{query}"
+        return f"{self._base_url}/{path_segment}?{query}"
 
     def _get_issue_url_group(self, group_id: str, issue_id: str) -> str:
         q = urlencode([("version", SNYK_REST_API_VERSION)])
         return f"{self._base_url}/groups/{group_id}/issues/{issue_id}?{q}"
+
+    def _get_issue_url_org(self, org_id: str, issue_id: str) -> str:
+        q = urlencode([("version", SNYK_REST_API_VERSION)])
+        return f"{self._base_url}/orgs/{org_id}/issues/{issue_id}?{q}"
 
     def iter_group_issues(
         self,
@@ -221,6 +245,26 @@ class IssuesClient:
     def get_group_issue(self, group_id: str, issue_id: str) -> dict[str, Any]:
         """Fetch a single issue in group scope; return a normalized record."""
         doc = self._get_json(self._get_issue_url_group(group_id, issue_id))
+        raw = parse_single_issue_document(doc)
+        return normalized_issue_record(raw)
+
+    def iter_org_issues(
+        self,
+        org_id: str,
+        *,
+        list_params: GroupIssueListParams | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield normalized issue records for an org, following ``links.next``."""
+        url: str | None = self._first_list_url_org(org_id, list_params)
+        while url:
+            doc = self._get_json(url)
+            page = parse_issues_list_document(doc)
+            yield from _yield_normalized_issues(page)
+            url = resolve_next_url(self._base_url, page.links.get("next"))
+
+    def get_org_issue(self, org_id: str, issue_id: str) -> dict[str, Any]:
+        """Fetch a single issue in org scope; return a normalized record."""
+        doc = self._get_json(self._get_issue_url_org(org_id, issue_id))
         raw = parse_single_issue_document(doc)
         return normalized_issue_record(raw)
 

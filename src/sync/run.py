@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
-from config.errors import ConfigError
-from config.models import AppConfig
+from config.models import AppConfig, AzureBoardsConfig
 from integrations.azure_devops.client import WorkItemsClient
 from mapping_store.protocol import MappingRow, MappingStore
 from snyk.client import GroupIssueListParams, IssuesClient
@@ -20,6 +19,7 @@ from sync.lifecycle import (
     derive_snyk_status,
     effective_severity_levels_from_threshold,
 )
+from sync.effective import boards_for_org_mapping, effective_work_item_template
 from sync.patch_build import build_create_patch, build_update_patch
 from sync.validate import validate_sync_config, validate_sync_environment
 
@@ -80,27 +80,80 @@ def run_sync(
         ``0`` when the loop completes (per-issue failures are logged only).
 
     Raises:
-        ConfigError: When startup validation fails.
+        config.errors.ConfigError: When startup validation fails (environment or merged YAML).
+
     """
     log = logger or LOGGER
     validate_sync_environment()
     validate_sync_config(config)
-    group_id = config.snyk.group_id.strip()
-    ado_org = config.azure_boards.organization.strip()
-    ado_proj = config.azure_boards.project.strip()
-    template = config.work_item_template
     ab = config.azure_boards
 
     levels = effective_severity_levels_from_threshold(config.snyk.severity_threshold)
     list_params = GroupIssueListParams(effective_severity_levels=levels)
-    issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
 
+    if ab.org_mappings:
+        for m in ab.org_mappings:
+            boards = boards_for_org_mapping(config, m)
+            template = effective_work_item_template(config, m.overrides)
+            store_gid = config.snyk.group_id.strip() or m.snyk_org_id.strip()
+            issues = list(
+                issues_client.iter_org_issues(
+                    m.snyk_org_id.strip(),
+                    list_params=list_params,
+                ),
+            )
+            _run_sync_batch(
+                issues=issues,
+                group_id_for_store=store_gid,
+                ado_org=m.organization.strip(),
+                ado_proj=m.project.strip(),
+                boards=boards,
+                template=template,
+                wit_client=wit_client,
+                store=store,
+                log=log,
+            )
+        log.info("sync run finished (org_mappings mode)")
+        return 0
+
+    group_id = config.snyk.group_id.strip()
+    ado_org = ab.organization.strip()
+    ado_proj = ab.project.strip()
+    template = effective_work_item_template(config, None)
+    issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
+    _run_sync_batch(
+        issues=issues,
+        group_id_for_store=group_id,
+        ado_org=ado_org,
+        ado_proj=ado_proj,
+        boards=ab,
+        template=template,
+        wit_client=wit_client,
+        store=store,
+        log=log,
+    )
+    log.info("sync run finished for group_id=%s", group_id)
+    return 0
+
+
+def _run_sync_batch(
+    *,
+    issues: list[dict[str, Any]],
+    group_id_for_store: str,
+    ado_org: str,
+    ado_proj: str,
+    boards: AzureBoardsConfig,
+    template: dict[str, Any],
+    wit_client: WorkItemsClient,
+    store: MappingStore,
+    log: logging.Logger,
+) -> None:
     wids: list[str] = []
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
     for rec in issues:
         if not isinstance(rec, dict):
             continue
-        nk = _natural_key(rec, group_id=group_id)
+        nk = _natural_key(rec, group_id=group_id_for_store)
         if nk is None:
             log.error("sync skip: missing org_id, project_id, or issue_id in Snyk record")
             continue
@@ -117,17 +170,17 @@ def run_sync(
     cache = batch_get_work_items(wit_client, ado_org, ado_proj, wids)
 
     for rec, nk, row in planned:
-        gid, oid, pid, iid = nk
+        _gid, _oid, pid, iid = nk
         try:
             _sync_one_issue(
                 rec=rec,
                 natural_key=nk,
                 row=row,
                 cache=cache,
-                group_id=gid,
+                group_id=_gid,
                 ado_org=ado_org,
                 ado_proj=ado_proj,
-                config=config,
+                boards=boards,
                 template=template,
                 wit_client=wit_client,
                 store=store,
@@ -135,9 +188,6 @@ def run_sync(
             )
         except Exception as exc:  # noqa: BLE001 — per-issue isolation
             log.error("sync skip issue_id=%s: %s", iid, exc)
-
-    log.info("sync run finished for group_id=%s", group_id)
-    return 0
 
 
 def _sync_one_issue(
@@ -149,7 +199,7 @@ def _sync_one_issue(
     group_id: str,
     ado_org: str,
     ado_proj: str,
-    config: AppConfig,
+    boards: AzureBoardsConfig,
     template: dict[str, Any],
     wit_client: WorkItemsClient,
     store: MappingStore,
@@ -170,7 +220,7 @@ def _sync_one_issue(
         return
 
     new_status = derived.status
-    ab = config.azure_boards
+    ab = boards
     title = title_with_package(attrs)
     description = build_system_description(
         attrs,

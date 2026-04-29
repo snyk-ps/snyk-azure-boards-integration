@@ -25,23 +25,28 @@ def validate_sync_config(config: AppConfig) -> None:
         ConfigError: When required routing or work item strings are missing or empty.
     """
     ab = config.azure_boards
-    if not ab.organization.strip():
-        raise ConfigError(
-            "azure_boards.organization is required for sync (non-empty after merge)",
-        )
-    if not ab.project.strip():
-        raise ConfigError(
-            "azure_boards.project is required for sync (non-empty after merge)",
-        )
-    if not config.snyk.group_id.strip():
+    has_org_mappings = bool(ab.org_mappings)
+
+    if not has_org_mappings:
+        if not ab.organization.strip():
+            raise ConfigError(
+                "azure_boards.organization is required for sync (non-empty after merge)",
+            )
+        if not ab.project.strip():
+            raise ConfigError(
+                "azure_boards.project is required for sync (non-empty after merge)",
+            )
+
+    if not has_org_mappings and not config.snyk.group_id.strip():
         raise ConfigError(
             "snyk.group_id is required for sync (non-empty after merge); "
             "see README for SNYK_GROUP_ID / YAML / CLI",
         )
+
     for label, val in (
-        ("azure_boards.work_item_type", ab.work_item_type),
-        ("azure_boards.work_item_state_active", ab.work_item_state_active),
-        ("azure_boards.work_item_state_closed", ab.work_item_state_closed),
+        ("azure_boards.defaults.work_item_type", ab.work_item_type),
+        ("azure_boards.defaults.work_item_state_active", ab.work_item_state_active),
+        ("azure_boards.defaults.work_item_state_closed", ab.work_item_state_closed),
     ):
         if not val.strip():
             raise ConfigError(f"{label} must be non-empty for sync (after merge)")

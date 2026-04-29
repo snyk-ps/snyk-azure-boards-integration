@@ -14,6 +14,8 @@ from config.models import (
     DEFAULT_SQLITE_PATH,
     AppConfig,
     AzureBoardsConfig,
+    AzureBoardsDefaults,
+    OrgMapping,
     SnykConfig,
 )
 
@@ -30,15 +32,28 @@ _ENV_MAPPING_STORE = "MAPPING_STORE"
 _ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
 
 
+_DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
+    {
+        "work_item_type",
+        "work_item_state_active",
+        "work_item_state_closed",
+    },
+)
+
+
 def _default_tree() -> dict[str, Any]:
     return {
         "azure_boards": {
             "create_new_work_items": True,
             "organization": "",
             "project": "",
-            "work_item_type": "Task",
-            "work_item_state_active": "New",
-            "work_item_state_closed": "Closed",
+            "defaults": {
+                "work_item_type": "Task",
+                "work_item_state_active": "New",
+                "work_item_state_closed": "Closed",
+                "work_item_template": {},
+            },
+            "org_mappings": [],
         },
         "work_item_template": {},
         "snyk": {"group_id": "", "severity_threshold": "high"},
@@ -82,21 +97,6 @@ def _normalize_mapping_store(raw: str) -> str:
             f"mapping_store must be one of: {allowed} (got {raw!r})",
         )
     return s
-
-
-def _azure_boards_non_secret_str(
-    ab_raw: dict[str, Any],
-    key: str,
-    *,
-    default: str,
-) -> str:
-    """Read string from ``azure_boards``; empty string is preserved (sync validates)."""
-    if key not in ab_raw:
-        return default
-    val = ab_raw[key]
-    if val is None:
-        return ""
-    return str(val).strip()
 
 
 def _normalize_severity(raw: str) -> str:
@@ -197,6 +197,121 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             tree["sqlite_path"] = sp
 
 
+def _reject_deprecated_flat_work_item_keys(ab_raw: dict[str, Any]) -> None:
+    """Reject unsupported flat ``work_item_*`` keys under ``azure_boards`` root."""
+    for key in _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS:
+        if key in ab_raw:
+            raise ConfigError(
+                f"azure_boards.{key} is not supported; "
+                f"use azure_boards.defaults.{key} instead",
+            )
+
+
+def _string_from_defaults_section(
+    defaults_raw: dict[str, Any],
+    key: str,
+    *,
+    hard_default: str,
+) -> str:
+    """Read a string field from ``defaults`` with built-in fallback."""
+    if key not in defaults_raw:
+        return hard_default
+    raw = defaults_raw[key]
+    if raw is None:
+        return hard_default
+    s = str(raw).strip()
+    return s if s else hard_default
+
+
+def _parse_org_mappings(ab_raw: dict[str, Any]) -> list[OrgMapping]:
+    raw = ab_raw.get("org_mappings")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ConfigError("azure_boards.org_mappings must be a list")
+    out: list[OrgMapping] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ConfigError(
+                f"azure_boards.org_mappings[{i}] must be a mapping",
+            )
+        org = str(item.get("organization", "") or "").strip()
+        proj = str(item.get("project", "") or "").strip()
+        snyk_org = str(item.get("snyk_org_id", "") or "").strip()
+        if not org:
+            raise ConfigError(
+                f"azure_boards.org_mappings[{i}].organization is required",
+            )
+        if not proj:
+            raise ConfigError(
+                f"azure_boards.org_mappings[{i}].project is required",
+            )
+        if not snyk_org:
+            raise ConfigError(
+                f"azure_boards.org_mappings[{i}].snyk_org_id is required",
+            )
+        ov = item.get("overrides")
+        overrides: dict[str, Any] = {}
+        if ov is not None:
+            if not isinstance(ov, Mapping):
+                raise ConfigError(
+                    f"azure_boards.org_mappings[{i}].overrides must be a mapping",
+                )
+            overrides = dict(ov)
+        out.append(
+            OrgMapping(
+                organization=org,
+                project=proj,
+                snyk_org_id=snyk_org,
+                overrides=overrides,
+            ),
+        )
+    return out
+
+
+def _parse_azure_boards_defaults(
+    ab_raw: dict[str, Any],
+) -> tuple[AzureBoardsDefaults, str, str, str]:
+    """Build ``AzureBoardsDefaults`` and duplicate flat fields on ``AzureBoardsConfig``."""
+    _reject_deprecated_flat_work_item_keys(ab_raw)
+
+    defaults_raw = ab_raw.get("defaults")
+    if defaults_raw is None:
+        defaults_raw = {}
+    if not isinstance(defaults_raw, dict):
+        raise ConfigError("azure_boards.defaults must be a mapping")
+
+    wit_type = _string_from_defaults_section(
+        defaults_raw,
+        "work_item_type",
+        hard_default="Task",
+    )
+    wit_active = _string_from_defaults_section(
+        defaults_raw,
+        "work_item_state_active",
+        hard_default="New",
+    )
+    wit_closed = _string_from_defaults_section(
+        defaults_raw,
+        "work_item_state_closed",
+        hard_default="Closed",
+    )
+
+    wit_tmpl = defaults_raw.get("work_item_template")
+    if wit_tmpl is None:
+        wit_tmpl = {}
+    if not isinstance(wit_tmpl, dict):
+        raise ConfigError("azure_boards.defaults.work_item_template must be a mapping")
+
+    defaults = AzureBoardsDefaults(
+        work_item_type=wit_type,
+        work_item_state_active=wit_active,
+        work_item_state_closed=wit_closed,
+        work_item_template=dict(wit_tmpl),
+    )
+    return defaults, wit_type, wit_active, wit_closed
+
+
 def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     """Build AppConfig from a merged tree."""
     ab_raw = tree.get("azure_boards") or {}
@@ -228,15 +343,8 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     org = str(ab_raw.get("organization", "") or "").strip()
     proj = str(ab_raw.get("project", "") or "").strip()
 
-    wit_type = _azure_boards_non_secret_str(
-        ab_raw, "work_item_type", default="Task"
-    )
-    wit_active = _azure_boards_non_secret_str(
-        ab_raw, "work_item_state_active", default="New"
-    )
-    wit_closed = _azure_boards_non_secret_str(
-        ab_raw, "work_item_state_closed", default="Closed"
-    )
+    defaults_obj, wit_type, wit_active, wit_closed = _parse_azure_boards_defaults(ab_raw)
+    org_mappings = _parse_org_mappings(ab_raw)
 
     ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
     if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
@@ -257,6 +365,8 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             work_item_type=wit_type,
             work_item_state_active=wit_active,
             work_item_state_closed=wit_closed,
+            defaults=defaults_obj,
+            org_mappings=org_mappings,
         ),
         work_item_template=dict(wit),
         snyk=SnykConfig(group_id=gid, severity_threshold=sev, extra=extra),

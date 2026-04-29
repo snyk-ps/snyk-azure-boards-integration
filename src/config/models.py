@@ -7,6 +7,26 @@ from typing import Any
 
 
 @dataclass
+class AzureBoardsDefaults:
+    """Default work item policy under ``azure_boards.defaults`` (YAML)."""
+
+    work_item_type: str = "Task"
+    work_item_state_active: str = "New"
+    work_item_state_closed: str = "Closed"
+    work_item_template: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OrgMapping:
+    """One ADO project ↔ Snyk org pairing."""
+
+    organization: str = ""
+    project: str = ""
+    snyk_org_id: str = ""
+    overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AzureBoardsConfig:
     """Azure Boards-related settings."""
 
@@ -16,6 +36,8 @@ class AzureBoardsConfig:
     work_item_type: str = "Task"
     work_item_state_active: str = "New"
     work_item_state_closed: str = "Closed"
+    defaults: AzureBoardsDefaults = field(default_factory=AzureBoardsDefaults)
+    org_mappings: list[OrgMapping] = field(default_factory=list)
 
 
 @dataclass

@@ -59,6 +59,41 @@ def _issue_resource(issue_key: str = "k1") -> dict:
     }
 
 
+def test_iter_org_issues_two_pages_follows_links_next() -> None:
+    oid = "22222222-2222-2222-2222-222222222222"
+    calls: list[str] = []
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        calls.append(req.full_url)
+        if len(calls) == 1:
+            assert f"/orgs/{oid}/issues" in req.full_url
+            return _FakeResp(
+                _page_json(
+                    data=[_issue_resource("a")],
+                    links={"next": f"rest/orgs/{oid}/issues?page=2"},
+                )
+            )
+        assert "page=2" in req.full_url
+        return _FakeResp(_page_json(data=[_issue_resource("b")], links={}))
+
+    client = IssuesClient(token="t", opener=opener)
+    rows = list(client.iter_org_issues(oid))
+    assert [r.get("issue_id") for r in rows] == ["a", "b"]
+
+
+def test_get_org_issue_success_normalized() -> None:
+    oid = "o1"
+    issue = "i1"
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        assert f"/orgs/{oid}/issues/{issue}" in req.full_url
+        return _FakeResp(_page_json(data=_issue_resource("ik")))
+
+    client = IssuesClient(token="t", opener=opener)
+    out = client.get_org_issue(oid, issue)
+    assert out["issue_id"] == "ik"
+
+
 def test_iter_group_issues_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SNYK_TOKEN", raising=False)
     client = IssuesClient()

@@ -12,7 +12,7 @@ The following **top-level keys** define the configuration namespaces (after load
 
 | Key | Purpose |
 |-----|---------|
-| `azure_boards` | Settings for Azure Boards behavior, including global creation enablement (**P2-FR-11**), and non-secret Azure DevOps routing (**`organization`**, **`project`**) for REST calls. |
+| `azure_boards` | Settings for Azure Boards behavior, including global creation enablement (**P2-FR-11**), non-secret Azure DevOps routing (**`organization`**, **`project`**), **`defaults`** (work item type, states, template), and optional **`org_mappings`**. |
 | `work_item_template` | Placeholder mapping for future work item defaults (type, fields, routing); MAY be empty. |
 | `snyk` | Snyk integration settings, including **group ID** and **severity threshold**; additional keys MAY be added in later changes. |
 | `mapping_store` | Backend for Snyk↔work-item mapping persistence (**P2-FR-7**): **`sqlite`** for local dev/tests, or reserved **`azure_table`** for production-style storage (see `azure-platform`). |
@@ -50,25 +50,32 @@ Under `azure_boards`, the configuration SHALL include **`create_new_work_items`*
 
 ### Requirement: Azure Boards work item type and state strings for sync
 
-Under **`azure_boards`**, the configuration SHALL include these additional **non-secret** string keys used by the **`sync`** command when creating or transitioning work items:
+Under **`azure_boards.defaults`**, the configuration SHALL include these **non-secret** string keys used by the **`sync`** command when creating or transitioning work items (see also per-mapping **`overrides`** in **`org_mappings`** when that feature is used):
 
 - **`work_item_type`**: Boards work item type name for **`$type`** on create (default **`Task`** when omitted after merge).
 - **`work_item_state_active`**: Boards **`System.State`** value representing an **active** finding in the operator’s process (default **`New`** when omitted after merge).
 - **`work_item_state_closed`**: Boards **`System.State`** value used when placing a work item on the **close path** for Snyk **resolved** or **ignored** findings (default **`Closed`** when omitted after merge).
 
+The loader SHALL **not** accept **`work_item_type`**, **`work_item_state_active`**, or **`work_item_state_closed`** as direct children of **`azure_boards`**; those fields belong only under **`azure_boards.defaults`**, and a clear, non-secret error SHALL be raised if the flat keys are present.
+
 After merge, each key SHALL either be omitted (and therefore defaulted as above) or be a **non-empty** string; empty strings SHALL be rejected with a clear, non-secret error **before** the per-issue sync loop begins.
 
-The **`README.md`** and the tracked sample YAML under **`data/`** SHALL list these keys under **`azure_boards`** with their **defaults** and SHALL explain that operators **MUST** choose values that exist for their **process template** (for example Agile **Task** vs other work item types and valid state names).
+The **`README.md`** and the tracked sample YAML under **`data/`** SHALL list these keys under **`azure_boards.defaults`** with their **defaults** and SHALL explain that operators **MUST** choose values that exist for their **process template** (for example Agile **Task** vs other work item types and valid state names).
 
 #### Scenario: Defaults when keys omitted
 
-- **WHEN** the three keys are absent from YAML and not overridden by environment or CLI layers documented for this product
+- **WHEN** the three keys are absent from under **`azure_boards.defaults`** in YAML and not overridden by environment or CLI layers documented for this product
 - **THEN** merged configuration SHALL expose `Task`, `New`, and `Closed` as the effective defaults for sync
 
 #### Scenario: Empty string rejected at sync startup
 
-- **WHEN** `azure_boards.work_item_state_active` is set to an empty string and the user runs **`sync`**
+- **WHEN** `azure_boards.defaults.work_item_state_active` is set to an empty string and the user runs **`sync`**
 - **THEN** the command SHALL exit non-zero before processing issues with an error that does not include secrets
+
+#### Scenario: Flat work item keys under azure_boards rejected
+
+- **WHEN** YAML sets **`azure_boards.work_item_type`** (or **`work_item_state_active`** / **`work_item_state_closed`**) at the **`azure_boards`** root instead of under **`defaults`**
+- **THEN** loading SHALL fail with a clear error that directs operators to **`azure_boards.defaults`**
 
 ---
 
@@ -230,7 +237,7 @@ Secrets SHALL continue to come **only** from environment variables or secret sto
 
 ### Requirement: README configuration documentation
 
-The repository **`README.md`** SHALL include a completed **`Configuration`** section (including **`Parameter Descriptions`**) that documents: YAML file location and format overview; **precedence** (**defaults → file → env → CLI**, CLI wins); that **YAML is the intended IaC / deployment source** and CLI is primarily for **local overrides**; CLI flags for config; supported environment variables (including overrides and secrets policy); defaults and optional omissions; **`mapping_store`**, **`sqlite_path`**, **`MAPPING_STORE`**, **`MAPPING_STORE_SQLITE_PATH`**, and **`--mapping-store-sqlite-path`**; that the SQLite database is **local non-secret persistence** and **secrets MUST NOT** be stored in that path or file; **`azure_boards.work_item_type`**, **`azure_boards.work_item_state_active`**, and **`azure_boards.work_item_state_closed`** with defaults (**`Task`**, **`New`**, **`Closed`**) and the requirement that operators set valid values for their process; and an **example YAML** snippet (or pointer to the **`data/`** sample) that reflects the keys `azure_boards`, `work_item_template`, `snyk`, `mapping_store`, and `sqlite_path` without embedding real tokens or secrets.
+The repository **`README.md`** SHALL include a completed **`Configuration`** section (including **`Parameter Descriptions`**) that documents: YAML file location and format overview; **precedence** (**defaults → file → env → CLI**, CLI wins); that **YAML is the intended IaC / deployment source** and CLI is primarily for **local overrides**; CLI flags for config; supported environment variables (including overrides and secrets policy); defaults and optional omissions; **`mapping_store`**, **`sqlite_path`**, **`MAPPING_STORE`**, **`MAPPING_STORE_SQLITE_PATH`**, and **`--mapping-store-sqlite-path`**; that the SQLite database is **local non-secret persistence** and **secrets MUST NOT** be stored in that path or file; **`azure_boards.defaults`** with **`work_item_type`**, **`work_item_state_active`**, and **`work_item_state_closed`** (defaults **`Task`**, **`New`**, **`Closed`**) and the requirement that operators set valid values for their process; and an **example YAML** snippet (or pointer to the **`data/`** sample) that reflects the keys `azure_boards`, `work_item_template`, `snyk`, `mapping_store`, and `sqlite_path` without embedding real tokens or secrets.
 
 #### Scenario: Operator can configure without reading source
 
@@ -241,7 +248,7 @@ The repository **`README.md`** SHALL include a completed **`Configuration`** sec
 
 ### Requirement: Sample configuration file under `data/`
 
-The repository SHALL include at least one **sample** YAML configuration file under the **`data/`** directory that conforms to the documented schema (placeholder values only; no secrets). The sample SHALL include **`mapping_store`** and **`sqlite_path`** with placeholder non-secret values. The sample SHALL list **`azure_boards.work_item_type`**, **`azure_boards.work_item_state_active`**, and **`azure_boards.work_item_state_closed`** with their documented defaults and comments stating that values MUST exist for the target process. The sample SHALL be **tracked in version control** and SHALL **not** be excluded by **`.gitignore`** (or equivalent ignore rules), so it remains available in every clone for documentation and local testing (e.g. `--config` pointing at that path).
+The repository SHALL include at least one **sample** YAML configuration file under the **`data/`** directory that conforms to the documented schema (placeholder values only; no secrets). The sample SHALL include **`mapping_store`** and **`sqlite_path`** with placeholder non-secret values. The sample SHALL list the sync-related strings under **`azure_boards.defaults`** (**`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**) with their documented defaults and comments stating that values MUST exist for the target process. The sample SHALL be **tracked in version control** and SHALL **not** be excluded by **`.gitignore`** (or equivalent ignore rules), so it remains available in every clone for documentation and local testing (e.g. `--config` pointing at that path).
 
 #### Scenario: Sample present and tracked
 
@@ -256,7 +263,7 @@ The repository SHALL include at least one **sample** YAML configuration file und
 #### Scenario: Sample shows sync-related azure_boards keys
 
 - **WHEN** a developer opens the tracked sample YAML
-- **THEN** it SHALL include the three `azure_boards` keys introduced for sync with defaults or placeholders consistent with this capability
+- **THEN** it SHALL include **`azure_boards.defaults`** with **`work_item_type`**, **`work_item_state_active`**, and **`work_item_state_closed`** (defaults or placeholders consistent with this capability)
 
 ---
 

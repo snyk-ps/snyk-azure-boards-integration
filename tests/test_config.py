@@ -219,3 +219,51 @@ def test_azure_boards_org_project_env_overrides_yaml(
     c = load_app_config(config_path=str(p), cli_group_id=None)
     assert c.azure_boards.organization == "from-env"
     assert c.azure_boards.project == "from-env-p"
+
+
+def test_rejects_flat_work_item_keys_under_azure_boards(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  work_item_type: Task\n"
+        "  defaults:\n"
+        "    work_item_type: Task\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="not supported"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_org_mappings_loads(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  org_mappings:\n"
+        "    - organization: ado-o\n"
+        "      project: ado-p\n"
+        "      snyk_org_id: org-uuid-1\n"
+        "      overrides:\n"
+        "        work_item_type: Issue\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert len(c.azure_boards.org_mappings) == 1
+    m = c.azure_boards.org_mappings[0]
+    assert m.organization == "ado-o"
+    assert m.project == "ado-p"
+    assert m.snyk_org_id == "org-uuid-1"
+    assert m.overrides.get("work_item_type") == "Issue"
+
+
+def test_org_mappings_rejects_empty_snyk_org(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  org_mappings:\n"
+        "    - organization: a\n"
+        "      project: b\n"
+        "      snyk_org_id: \"\"\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="snyk_org_id"):
+        load_app_config(config_path=str(p), cli_group_id=None)

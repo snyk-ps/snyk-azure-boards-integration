@@ -7,12 +7,20 @@ from config.loader import (
     parse_yaml_bytes,
     resolve_config_path,
 )
-from config.models import AppConfig, AzureBoardsConfig, SnykConfig
+from config.models import (
+    AppConfig,
+    AzureBoardsConfig,
+    AzureBoardsDefaults,
+    OrgMapping,
+    SnykConfig,
+)
 
 __all__ = [
     "AppConfig",
     "AzureBoardsConfig",
+    "AzureBoardsDefaults",
     "ConfigError",
+    "OrgMapping",
     "SnykConfig",
     "load_app_config",
     "load_yaml_file",

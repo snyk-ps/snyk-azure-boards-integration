@@ -3,7 +3,13 @@
 import pytest
 
 from config.errors import ConfigError
-from config.models import AppConfig, AzureBoardsConfig, SnykConfig
+from config.models import (
+    AppConfig,
+    AzureBoardsConfig,
+    AzureBoardsDefaults,
+    OrgMapping,
+    SnykConfig,
+)
 from sync.lifecycle import (
     DERIVED_IGNORED,
     DERIVED_OPEN,
@@ -51,6 +57,26 @@ def test_effective_severity_levels_from_threshold() -> None:
         "high",
         "critical",
     )
+
+
+def test_validate_sync_config_org_mappings_allows_missing_group_id() -> None:
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            organization="",
+            project="",
+            org_mappings=[
+                OrgMapping(
+                    organization="ado-o",
+                    project="ado-p",
+                    snyk_org_id="org-id",
+                ),
+            ],
+            defaults=AzureBoardsDefaults(),
+        ),
+        work_item_template={},
+        snyk=SnykConfig(group_id=""),
+    )
+    validate_sync_config(cfg)
 
 
 def test_validate_sync_config_requires_org_project_group() -> None:

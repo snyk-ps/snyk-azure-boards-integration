@@ -16,6 +16,8 @@ Responses use **`application/vnd.api+json`** unless stated otherwise.
 |---|--------|------|
 | List issues (group) | `GET` | `/groups/{group_id}/issues` |
 | Get issue (group) | `GET` | `/groups/{group_id}/issues/{issue_id}` |
+| List issues (org) | `GET` | `/orgs/{org_id}/issues` |
+| Get issue (org) | `GET` | `/orgs/{org_id}/issues/{issue_id}` |
 
 Other issue-related routes (for example under **`/orgs/{org_id}/packages/...`**) are defined in the same spec if the implementation needs them.
 

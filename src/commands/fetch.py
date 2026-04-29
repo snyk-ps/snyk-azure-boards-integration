@@ -57,6 +57,16 @@ def register_fetch_parser(subparsers: argparse._SubParsersAction[argparse.Argume
         ),
     )
     fetch.add_argument(
+        "--org-id",
+        dest="org_id_flag",
+        metavar="UUID",
+        default=None,
+        help=(
+            "Snyk organization id for org-scoped issue list/get (REST /orgs/{org_id}/issues). "
+            "When set, group id is not required."
+        ),
+    )
+    fetch.add_argument(
         "tail",
         nargs="*",
         metavar="ARG",
@@ -151,6 +161,12 @@ def _list_params_from_args(args: argparse.Namespace) -> GroupIssueListParams:
 
 def run_fetch(args: argparse.Namespace) -> int:
     """Execute the fetch subcommand; return process exit code."""
+    org_id_cli = (
+        args.org_id_flag.strip()
+        if args.org_id_flag and str(args.org_id_flag).strip()
+        else ""
+    )
+
     try:
         pos_group, issue_id = _parse_fetch_tail(args.action, list(args.tail))
     except ValueError as exc:
@@ -175,10 +191,15 @@ def run_fetch(args: argparse.Namespace) -> int:
         return 1
 
     group_id = config.snyk.group_id.strip()
-    if not group_id:
+    if org_id_cli:
+        org_id = org_id_cli
+    else:
+        org_id = ""
+
+    if not org_id and not group_id:
         print(
-            "group id is required: set snyk.group_id in config, SNYK_GROUP_ID, "
-            "or pass --group-id / positional (see README)",
+            "group id or --org-id is required: set snyk.group_id in config, SNYK_GROUP_ID, "
+            "pass --group-id / positional, or use --org-id for org-scoped fetch (see README)",
             file=sys.stderr,
         )
         return 2
@@ -191,11 +212,18 @@ def run_fetch(args: argparse.Namespace) -> int:
     try:
         if args.action == "list":
             params = _list_params_from_args(args)
-            for rec in client.iter_group_issues(group_id, list_params=params):
-                print(json.dumps(rec, sort_keys=True))
+            if org_id:
+                for rec in client.iter_org_issues(org_id, list_params=params):
+                    print(json.dumps(rec, sort_keys=True))
+            else:
+                for rec in client.iter_group_issues(group_id, list_params=params):
+                    print(json.dumps(rec, sort_keys=True))
         else:
             assert issue_id is not None
-            rec: dict[str, Any] = client.get_group_issue(group_id, issue_id)
+            if org_id:
+                rec = client.get_org_issue(org_id, issue_id)
+            else:
+                rec = client.get_group_issue(group_id, issue_id)
             print(json.dumps(rec, sort_keys=True))
     except SnykApiError as exc:
         print(str(exc), file=sys.stderr)

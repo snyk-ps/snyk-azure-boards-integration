@@ -52,6 +52,7 @@ def test_run_sync_uses_org_iterator_when_org_mappings(
                     organization="ado-o",
                     project="ado-p",
                     snyk_org_id="org-uuid",
+                    snyk_org_slug="org-slug",
                 ),
             ],
         ),

@@ -40,6 +40,19 @@ def effective_work_item_template(
     )
 
 
+def effective_snyk_org_slug(_app: AppConfig, mapping: OrgMapping | None) -> str:
+    """
+    Human-readable Snyk org slug for ``app.snyk.io`` URLs.
+
+    Only ``azure_boards.org_mappings[]`` rows carry a slug. Group-scoped sync
+    (no ``org_mappings``) passes an empty slug until a dedicated configuration
+    exists; links in work items may be incomplete.
+    """
+    if mapping is not None:
+        return mapping.snyk_org_slug.strip()
+    return ""
+
+
 def boards_for_org_mapping(app: AppConfig, m: OrgMapping) -> AzureBoardsConfig:
     """AzureBoardsConfig scoped to one org mapping row (ADO routing + effective strings)."""
     wt, wa, wc = effective_work_item_strings(app.azure_boards, m.overrides)

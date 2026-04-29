@@ -6,6 +6,8 @@ azure_boards:
   create_new_work_items: true
   organization: "your-azure-devops-org"
   project: "your-azure-devops-project"
+  # For canonical app.snyk.io links in work items, use org_mappings below with snyk_org_slug per row.
+  # Group-scoped sync (this layout) does not configure an org slug; links may be incomplete until then.
   # Work item type and Boards states must exist for your process (Agile Task vs CMMI, etc.).
   defaults:
     work_item_type: Task
@@ -22,6 +24,7 @@ azure_boards:
   #   - organization: "your-azure-devops-org"
   #     project: "your-azure-devops-project"
   #     snyk_org_id: "00000000-0000-0000-0000-000000000002"
+  #     snyk_org_slug: "your-snyk-org-slug"
   #     overrides:
   #       work_item_type: Task
   #       # work_item_template:

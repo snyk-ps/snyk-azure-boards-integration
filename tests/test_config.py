@@ -43,12 +43,46 @@ def test_load_app_config_defaults_no_file() -> None:
 def test_load_app_config_from_yaml_file(tmp_path: Path) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(
-        "snyk:\n  group_id: g-from-file\n  severity_threshold: critical\n",
+        "azure_boards:\n"
+        "  organization: my-ado-org\n"
+        "  project: my-ado-proj\n"
+        "snyk:\n"
+        "  group_id: g-from-file\n"
+        "  severity_threshold: critical\n",
         encoding="utf-8",
     )
     c = load_app_config(config_path=str(p), cli_group_id=None)
     assert c.snyk.group_id == "g-from-file"
     assert c.snyk.severity_threshold == "critical"
+    assert c.azure_boards.organization == "my-ado-org"
+    assert c.azure_boards.project == "my-ado-proj"
+
+
+def test_load_app_config_rejects_snyk_org_slug_under_azure_boards(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  organization: o\n"
+        "  project: p\n"
+        "  snyk_org_slug: bad\n"
+        "snyk:\n"
+        "  group_id: g\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="azure_boards.snyk_org_slug"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_load_app_config_rejects_snyk_org_slug_under_snyk(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "snyk:\n"
+        "  group_id: g\n"
+        "  snyk_org_slug: bad\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="not supported"):
+        load_app_config(config_path=str(p), cli_group_id=None)
 
 
 def test_cli_group_id_overrides_file(tmp_path: Path) -> None:
@@ -242,6 +276,7 @@ def test_org_mappings_loads(tmp_path: Path) -> None:
         "    - organization: ado-o\n"
         "      project: ado-p\n"
         "      snyk_org_id: org-uuid-1\n"
+        "      snyk_org_slug: my-slug\n"
         "      overrides:\n"
         "        work_item_type: Issue\n",
         encoding="utf-8",
@@ -252,7 +287,23 @@ def test_org_mappings_loads(tmp_path: Path) -> None:
     assert m.organization == "ado-o"
     assert m.project == "ado-p"
     assert m.snyk_org_id == "org-uuid-1"
+    assert m.snyk_org_slug == "my-slug"
     assert m.overrides.get("work_item_type") == "Issue"
+
+
+def test_org_mappings_rejects_empty_snyk_org_slug(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  org_mappings:\n"
+        "    - organization: a\n"
+        "      project: b\n"
+        "      snyk_org_id: org-1\n"
+        "      snyk_org_slug: \"\"\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="snyk_org_slug"):
+        load_app_config(config_path=str(p), cli_group_id=None)
 
 
 def test_org_mappings_rejects_empty_snyk_org(tmp_path: Path) -> None:

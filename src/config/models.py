@@ -23,6 +23,7 @@ class OrgMapping:
     organization: str = ""
     project: str = ""
     snyk_org_id: str = ""
+    snyk_org_slug: str = ""
     overrides: dict[str, Any] = field(default_factory=dict)
 
 

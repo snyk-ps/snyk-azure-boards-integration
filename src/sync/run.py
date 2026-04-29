@@ -11,6 +11,12 @@ from mapping_store.protocol import MappingRow, MappingStore
 from snyk.client import GroupIssueListParams, IssuesClient
 
 from sync.azure_batch import batch_get_work_items
+from sync.effective import (
+    boards_for_org_mapping,
+    effective_snyk_org_slug,
+    effective_work_item_template,
+)
+from sync.enrichment import enrich_issue_record
 from sync.issue_content import build_system_description, title_with_package
 from sync.lifecycle import (
     DERIVED_IGNORED,
@@ -19,7 +25,6 @@ from sync.lifecycle import (
     derive_snyk_status,
     effective_severity_levels_from_threshold,
 )
-from sync.effective import boards_for_org_mapping, effective_work_item_template
 from sync.patch_build import build_create_patch, build_update_patch
 from sync.validate import validate_sync_config, validate_sync_environment
 
@@ -96,6 +101,7 @@ def run_sync(
             boards = boards_for_org_mapping(config, m)
             template = effective_work_item_template(config, m.overrides)
             store_gid = config.snyk.group_id.strip() or m.snyk_org_id.strip()
+            slug = effective_snyk_org_slug(config, m)
             issues = list(
                 issues_client.iter_org_issues(
                     m.snyk_org_id.strip(),
@@ -112,6 +118,12 @@ def run_sync(
                 wit_client=wit_client,
                 store=store,
                 log=log,
+                issues_client=issues_client,
+                snyk_org_slug=slug,
+                use_org_scope_for_detail=True,
+                snyk_org_id_for_detail=m.snyk_org_id.strip(),
+                snyk_group_id_for_detail=config.snyk.group_id.strip()
+                or m.snyk_org_id.strip(),
             )
         log.info("sync run finished (org_mappings mode)")
         return 0
@@ -120,6 +132,7 @@ def run_sync(
     ado_org = ab.organization.strip()
     ado_proj = ab.project.strip()
     template = effective_work_item_template(config, None)
+    slug = effective_snyk_org_slug(config, None)
     issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
     _run_sync_batch(
         issues=issues,
@@ -131,6 +144,11 @@ def run_sync(
         wit_client=wit_client,
         store=store,
         log=log,
+        issues_client=issues_client,
+        snyk_org_slug=slug,
+        use_org_scope_for_detail=False,
+        snyk_org_id_for_detail=None,
+        snyk_group_id_for_detail=group_id,
     )
     log.info("sync run finished for group_id=%s", group_id)
     return 0
@@ -147,6 +165,11 @@ def _run_sync_batch(
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
+    issues_client: IssuesClient,
+    snyk_org_slug: str,
+    use_org_scope_for_detail: bool,
+    snyk_org_id_for_detail: str | None,
+    snyk_group_id_for_detail: str,
 ) -> None:
     wids: list[str] = []
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
@@ -185,6 +208,11 @@ def _run_sync_batch(
                 wit_client=wit_client,
                 store=store,
                 log=log,
+                issues_client=issues_client,
+                snyk_org_slug=snyk_org_slug,
+                use_org_scope_for_detail=use_org_scope_for_detail,
+                snyk_org_id_for_detail=snyk_org_id_for_detail,
+                snyk_group_id_for_detail=snyk_group_id_for_detail,
             )
         except Exception as exc:  # noqa: BLE001 — per-issue isolation
             log.error("sync skip issue_id=%s: %s", iid, exc)
@@ -204,11 +232,23 @@ def _sync_one_issue(
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
+    issues_client: IssuesClient,
+    snyk_org_slug: str,
+    use_org_scope_for_detail: bool,
+    snyk_org_id_for_detail: str | None,
+    snyk_group_id_for_detail: str,
 ) -> None:
     gid, oid, pid, iid = natural_key
+    rec = enrich_issue_record(
+        issues_client,
+        rec,
+        use_org_scope=use_org_scope_for_detail,
+        snyk_org_id=snyk_org_id_for_detail,
+        snyk_group_id=snyk_group_id_for_detail,
+        log=log,
+    )
     attrs = _issue_attrs(rec)
     issue_key = str(rec.get("issue_id") or iid)
-    rest_uuid = str(rec.get("rest_issue_id") or "")
 
     derived = derive_snyk_status(status=attrs.get("status"), ignored=attrs.get("ignored"))
     if derived is None:
@@ -222,10 +262,13 @@ def _sync_one_issue(
     new_status = derived.status
     ab = boards
     title = title_with_package(attrs)
+    issue_key = str(attrs.get("key") or issue_key)
+    proj_for_url = str(rec.get("project_id") or pid or "").strip()
     description = build_system_description(
         attrs,
-        group_id=group_id,
-        rest_issue_uuid=rest_uuid or iid,
+        snyk_org_slug=snyk_org_slug,
+        project_id=proj_for_url,
+        issue_key=issue_key,
     )
 
     prev_snyk = row.snyk_status if row is not None else None

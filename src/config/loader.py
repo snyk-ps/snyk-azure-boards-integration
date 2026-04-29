@@ -250,6 +250,13 @@ def _parse_org_mappings(ab_raw: dict[str, Any]) -> list[OrgMapping]:
             raise ConfigError(
                 f"azure_boards.org_mappings[{i}].snyk_org_id is required",
             )
+        slug_raw = item.get("snyk_org_slug")
+        snyk_slug = str(slug_raw or "").strip()
+        if not snyk_slug:
+            raise ConfigError(
+                f"azure_boards.org_mappings[{i}].snyk_org_slug is required "
+                "(human-readable org slug for app.snyk.io links)",
+            )
         ov = item.get("overrides")
         overrides: dict[str, Any] = {}
         if ov is not None:
@@ -263,6 +270,7 @@ def _parse_org_mappings(ab_raw: dict[str, Any]) -> list[OrgMapping]:
                 organization=org,
                 project=proj,
                 snyk_org_id=snyk_org,
+                snyk_org_slug=snyk_slug,
                 overrides=overrides,
             ),
         )
@@ -328,6 +336,12 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     if not isinstance(sn_raw, dict):
         raise ConfigError("snyk must be a mapping")
 
+    if "snyk_org_slug" in sn_raw:
+        raise ConfigError(
+            "snyk.snyk_org_slug is not supported; use "
+            "azure_boards.org_mappings[].snyk_org_slug on each mapping row",
+        )
+
     known_snyk = {"group_id", "severity_threshold"}
     extra = {k: v for k, v in sn_raw.items() if k not in known_snyk}
 
@@ -339,6 +353,13 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         ab_raw.get("create_new_work_items", True),
         field_name="azure_boards.create_new_work_items",
     )
+
+    if "snyk_org_slug" in ab_raw:
+        raise ConfigError(
+            "azure_boards.snyk_org_slug is not supported; set snyk_org_slug on each "
+            "azure_boards.org_mappings[] row. Without org_mappings, group-scoped sync "
+            "does not configure an org slug (Snyk UI links in work items may be incomplete).",
+        )
 
     org = str(ab_raw.get("organization", "") or "").strip()
     proj = str(ab_raw.get("project", "") or "").strip()
@@ -369,7 +390,11 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             org_mappings=org_mappings,
         ),
         work_item_template=dict(wit),
-        snyk=SnykConfig(group_id=gid, severity_threshold=sev, extra=extra),
+        snyk=SnykConfig(
+            group_id=gid,
+            severity_threshold=sev,
+            extra=extra,
+        ),
         mapping_store=mapping_store,
         sqlite_path=sqlite_path,
     )

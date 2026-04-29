@@ -1,12 +1,16 @@
-"""Build work item text from Snyk issue payloads (P2-FR-5.x v1)."""
+"""Build work item text from Snyk issue payloads (P2-FR-5.x)."""
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Mapping
+from urllib.parse import quote
 
 CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
 MAX_TITLE_LEN = 255
+# Azure DevOps rich-text field practical limit; tail is truncated with notice.
+_MAX_DESCRIPTION_CHARS = 32_000
 
 
 def primary_package_line(attrs: Mapping[str, Any]) -> str | None:
@@ -96,11 +100,55 @@ def cve_entries(attrs: Mapping[str, Any]) -> list[tuple[str, str | None]]:
     return out
 
 
-def best_effort_snyk_issue_url(*, group_id: str, rest_issue_uuid: str) -> str:
-    """Best-effort HTTPS URL without org slug (UI parity deferred)."""
-    gid = group_id.strip()
-    rid = rest_issue_uuid.strip()
-    return f"https://app.snyk.io/group/{gid}/issues/{rid}"
+def snyk_ui_issue_url(
+    *,
+    snyk_org_slug: str,
+    project_id: str,
+    issue_key: str,
+) -> str:
+    """
+    Canonical Snyk web app URL: org / project / fragment issue key.
+
+    Path segments are percent-encoded as required; issue key is used verbatim in the
+    fragment (``#issue-<key>``).
+    """
+    slug = snyk_org_slug.strip()
+    pid = project_id.strip()
+    key = issue_key.strip()
+    org_seg = quote(slug, safe="")
+    base = f"https://app.snyk.io/org/{org_seg}/project/{pid}"
+    return f"{base}#issue-{key}"
+
+
+def _remedy_lines_from_coordinate(coord: dict[str, Any]) -> list[str]:
+    rem = coord.get("remedies")
+    if rem is None or rem == []:
+        return []
+    if isinstance(rem, str) and rem.strip():
+        return [rem.strip()]
+    if isinstance(rem, list):
+        out: list[str] = []
+        for item in rem:
+            if isinstance(item, dict):
+                out.append(json.dumps(item, sort_keys=True))
+            elif item is not None:
+                out.append(str(item).strip())
+        return [x for x in out if x]
+    if isinstance(rem, dict):
+        return [json.dumps(rem, sort_keys=True)]
+    return [str(rem)]
+
+
+def remedy_section_lines(attrs: Mapping[str, Any]) -> list[str]:
+    """Human-readable lines for ``coordinates[].remedies``."""
+    coords = attrs.get("coordinates")
+    if not isinstance(coords, list):
+        return []
+    lines: list[str] = []
+    for coord in coords:
+        if isinstance(coord, dict):
+            lines.extend(_remedy_lines_from_coordinate(coord))
+    return lines
 
 
 def fix_flag_lines(attrs: Mapping[str, Any]) -> list[str]:
@@ -129,23 +177,35 @@ def fix_flag_lines(attrs: Mapping[str, Any]) -> list[str]:
 def build_system_description(
     attrs: Mapping[str, Any],
     *,
-    group_id: str,
-    rest_issue_uuid: str,
+    snyk_org_slug: str,
+    project_id: str,
+    issue_key: str,
 ) -> str:
-    """Multi-line plain text for ``System.Description`` (v1 summary)."""
+    """Multi-line plain text for ``System.Description``."""
     title = str(attrs.get("title") or "").strip()
     pkg_line = primary_package_line(attrs)
+    narrative = str(attrs.get("description") or "").strip()
+    remedies = remedy_section_lines(attrs)
     ftype = finding_type_verbatim(attrs)
     cwes = cwe_ids(attrs)
     cves = cve_entries(attrs)
     flags = fix_flag_lines(attrs)
-    link = best_effort_snyk_issue_url(group_id=group_id, rest_issue_uuid=rest_issue_uuid)
+    link = snyk_ui_issue_url(
+        snyk_org_slug=snyk_org_slug,
+        project_id=project_id,
+        issue_key=issue_key,
+    )
 
     parts: list[str] = []
     if title:
         parts.append(title)
     if pkg_line:
         parts.append(f"Package: {pkg_line}")
+    if narrative:
+        parts.append(narrative)
+    if remedies:
+        parts.append("Remediation:")
+        parts.extend(f"  {line}" for line in remedies)
     if ftype:
         parts.append(f"Finding type: {ftype}")
     if cwes:
@@ -158,7 +218,11 @@ def build_system_description(
     if flags:
         parts.append("Fix signals: " + ", ".join(flags))
     parts.append(f"Snyk: {link}")
-    parts.append(
-        "(Snyk UI links that require an org slug are deferred; this URL uses group and issue id.)",
-    )
-    return "\n".join(parts)
+
+    body = "\n".join(parts)
+    if len(body) <= _MAX_DESCRIPTION_CHARS:
+        return body
+    trunc = "[description truncated for Azure Boards field size]\n"
+    keep = _MAX_DESCRIPTION_CHARS - len(trunc)
+    return body[:keep] + trunc
+

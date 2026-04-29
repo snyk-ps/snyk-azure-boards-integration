@@ -7,6 +7,7 @@ import os
 from config.errors import ConfigError
 from config.models import AppConfig
 from integrations.azure_devops.constants import AZURE_DEVOPS_PAT_ENV
+from sync.effective import effective_snyk_org_slug
 
 
 def validate_sync_environment() -> None:
@@ -42,6 +43,14 @@ def validate_sync_config(config: AppConfig) -> None:
             "snyk.group_id is required for sync (non-empty after merge); "
             "see README for SNYK_GROUP_ID / YAML / CLI",
         )
+
+    if has_org_mappings:
+        for i, m in enumerate(ab.org_mappings):
+            if not effective_snyk_org_slug(config, m).strip():
+                raise ConfigError(
+                    "azure_boards.org_mappings[].snyk_org_slug is required for sync for "
+                    f"row [{i}] (human-readable slug for app.snyk.io links)",
+                )
 
     for label, val in (
         ("azure_boards.defaults.work_item_type", ab.work_item_type),

@@ -69,6 +69,7 @@ def test_validate_sync_config_org_mappings_allows_missing_group_id() -> None:
                     organization="ado-o",
                     project="ado-p",
                     snyk_org_id="org-id",
+                    snyk_org_slug="acme",
                 ),
             ],
             defaults=AzureBoardsDefaults(),
@@ -101,6 +102,41 @@ def test_validate_sync_config_rejects_empty_work_item_type() -> None:
     )
     with pytest.raises(ConfigError, match="work_item_type"):
         validate_sync_config(cfg)
+
+
+def test_validate_sync_config_group_mode_allows_missing_org_slug() -> None:
+    """Group-scoped sync does not configure a slug; links may be incomplete."""
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            organization="o",
+            project="p",
+        ),
+        work_item_template={},
+        snyk=SnykConfig(group_id="g"),
+    )
+    validate_sync_config(cfg)
+
+
+def test_validate_sync_config_requires_slug_each_org_mapping_row() -> None:
+    """Empty row slug is rejected at YAML load; validation covers in-memory edge cases."""
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            organization="",
+            project="",
+            org_mappings=[
+                OrgMapping(
+                    organization="ado-o",
+                    project="ado-p",
+                    snyk_org_id="org-id",
+                    snyk_org_slug="ok",
+                ),
+            ],
+            defaults=AzureBoardsDefaults(),
+        ),
+        work_item_template={},
+        snyk=SnykConfig(group_id=""),
+    )
+    validate_sync_config(cfg)
 
 
 def test_validate_sync_environment_requires_tokens(

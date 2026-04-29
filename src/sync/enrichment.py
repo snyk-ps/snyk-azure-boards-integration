@@ -85,4 +85,8 @@ def enrich_issue_record(
     merged = merge_issue_attributes(attrs, _issue_attrs(detail))
     out = dict(rec)
     out["issue_attributes"] = merged
+    if not str(rec.get("snyk_project_name") or "").strip():
+        pn = detail.get("snyk_project_name")
+        if pn is not None and str(pn).strip():
+            out["snyk_project_name"] = str(pn).strip()
     return out

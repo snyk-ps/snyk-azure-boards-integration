@@ -71,3 +71,30 @@ def test_normalized_issue_record_full() -> None:
 
 def test_normalized_issue_record_minimal() -> None:
     assert normalized_issue_record({}) == {}
+
+
+def test_normalized_issue_record_resolves_project_name_from_included() -> None:
+    included_project = {
+        "type": "project",
+        "id": "proj-uuid-1",
+        "attributes": {"name": "my-monitored-app"},
+    }
+    idx = {
+        ("project", "proj-uuid-1"): included_project,
+    }
+    resource = {
+        "relationships": {
+            "scan_item": {"data": {"type": "project", "id": "proj-uuid-1"}},
+        },
+    }
+    rec = normalized_issue_record(resource, included_index=idx)
+    assert rec["snyk_project_name"] == "my-monitored-app"
+
+
+def test_parse_issues_list_document_included_roundtrip() -> None:
+    doc = {
+        "data": [{"type": "issue", "id": "i1"}],
+        "included": [{"type": "project", "id": "p1", "attributes": {"name": "P"}}],
+    }
+    page = parse_issues_list_document(doc)
+    assert len(page.included) == 1

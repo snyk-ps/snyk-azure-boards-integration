@@ -81,6 +81,30 @@ def test_enrich_issue_record_calls_get_and_merges() -> None:
     assert out["issue_attributes"]["description"] == "full text"
 
 
+def test_enrich_issue_record_merges_snyk_project_name_from_get() -> None:
+    client = MagicMock()
+    client.get_group_issue.return_value = {
+        "issue_attributes": {
+            "description": "full text",
+        },
+        "snyk_project_name": "from-included",
+    }
+    rec = {
+        "rest_issue_id": "uuid-1",
+        "issue_id": "SNYK-1",
+        "issue_attributes": {"title": "t"},
+    }
+    out = enrich_issue_record(
+        client,
+        rec,
+        use_org_scope=False,
+        snyk_org_id=None,
+        snyk_group_id="gid",
+        log=logging.getLogger("t"),
+    )
+    assert out["snyk_project_name"] == "from-included"
+
+
 def test_enrich_issue_record_logs_on_api_error() -> None:
     client = MagicMock()
     client.get_group_issue.side_effect = SnykApiError("oops")

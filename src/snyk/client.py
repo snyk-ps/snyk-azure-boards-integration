@@ -30,6 +30,8 @@ from snyk.errors import (
 )
 from snyk.parser import (
     IssuesListPage,
+    build_included_index,
+    included_index_from_document,
     normalized_issue_record,
     parse_issues_list_document,
     parse_single_issue_document,
@@ -246,7 +248,8 @@ class IssuesClient:
         """Fetch a single issue in group scope; return a normalized record."""
         doc = self._get_json(self._get_issue_url_group(group_id, issue_id))
         raw = parse_single_issue_document(doc)
-        return normalized_issue_record(raw)
+        idx = included_index_from_document(doc)
+        return normalized_issue_record(raw, included_index=idx)
 
     def iter_org_issues(
         self,
@@ -266,12 +269,14 @@ class IssuesClient:
         """Fetch a single issue in org scope; return a normalized record."""
         doc = self._get_json(self._get_issue_url_org(org_id, issue_id))
         raw = parse_single_issue_document(doc)
-        return normalized_issue_record(raw)
+        idx = included_index_from_document(doc)
+        return normalized_issue_record(raw, included_index=idx)
 
 
 def _yield_normalized_issues(page: IssuesListPage) -> Iterator[dict[str, Any]]:
+    idx = build_included_index(page.included)
     for issue in page.issues:
-        yield normalized_issue_record(issue)
+        yield normalized_issue_record(issue, included_index=idx)
 
 
 def _status_message(code: int) -> str:

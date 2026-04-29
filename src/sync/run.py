@@ -17,7 +17,11 @@ from sync.effective import (
     effective_work_item_template,
 )
 from sync.enrichment import enrich_issue_record
-from sync.issue_content import build_system_description, title_with_package
+from sync.issue_content import (
+    build_system_description,
+    effective_target_label_for_title,
+    work_item_title,
+)
 from sync.lifecycle import (
     DERIVED_IGNORED,
     DERIVED_OPEN,
@@ -261,14 +265,26 @@ def _sync_one_issue(
 
     new_status = derived.status
     ab = boards
-    title = title_with_package(attrs)
     issue_key = str(attrs.get("key") or issue_key)
     proj_for_url = str(rec.get("project_id") or pid or "").strip()
+    sev_raw = attrs.get("effective_severity_level") or rec.get("severity")
+    severity = str(sev_raw).strip() if sev_raw is not None else ""
+    snyk_pn = str(rec.get("snyk_project_name") or "").strip()
+    target_label = effective_target_label_for_title(
+        snyk_project_name=snyk_pn,
+        ado_organization=ado_org,
+        ado_project=ado_proj,
+    )
+    title = work_item_title(attrs, target_name=target_label)
     description = build_system_description(
         attrs,
         snyk_org_slug=snyk_org_slug,
         project_id=proj_for_url,
         issue_key=issue_key,
+        ado_organization=ado_org,
+        ado_project=ado_proj,
+        snyk_project_name=snyk_pn or None,
+        severity=severity or None,
     )
 
     prev_snyk = row.snyk_status if row is not None else None

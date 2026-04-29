@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+import html
 from typing import Any, Mapping
+
+
+def _ado_system_description_html(plain: str) -> str:
+    """
+    Azure Boards ``System.Description`` is HTML; plain ``\\n`` / ``\\n\\n`` often
+    collapse in the web UI. Split on blank lines into paragraphs and use
+    ``<br />`` for single line breaks.
+    """
+    if not plain.strip():
+        return ""
+    blocks = [b.strip() for b in plain.split("\n\n") if b.strip()]
+    parts: list[str] = []
+    for block in blocks:
+        inner = html.escape(block, quote=False).replace("\n", "<br />")
+        parts.append(f"<p>{inner}</p>")
+    return "".join(parts)
 
 
 def _normalize_tags(template: Mapping[str, Any]) -> list[str]:
@@ -58,7 +75,11 @@ def build_create_patch(
     """
     ops: list[dict[str, Any]] = [
         {"op": "add", "path": "/fields/System.Title", "value": title},
-        {"op": "add", "path": "/fields/System.Description", "value": description},
+        {
+            "op": "add",
+            "path": "/fields/System.Description",
+            "value": _ado_system_description_html(description),
+        },
         {"op": "add", "path": "/fields/System.State", "value": active_state},
     ]
     tags = _normalize_tags(template)
@@ -87,7 +108,11 @@ def build_update_patch(
     """JSON Patch for ``PATCH`` update (replace built-ins, tags, then template ops)."""
     ops: list[dict[str, Any]] = [
         {"op": "replace", "path": "/fields/System.Title", "value": title},
-        {"op": "replace", "path": "/fields/System.Description", "value": description},
+        {
+            "op": "replace",
+            "path": "/fields/System.Description",
+            "value": _ado_system_description_html(description),
+        },
         {"op": "replace", "path": "/fields/System.State", "value": state},
     ]
     tags = _normalize_tags(template)

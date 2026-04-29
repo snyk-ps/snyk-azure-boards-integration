@@ -47,3 +47,19 @@ def test_build_create_patch_includes_tags_and_template_ops() -> None:
     assert "/fields/System.Title" in paths
     assert "/fields/System.Tags" in paths
     assert "/fields/Custom.Field" in paths
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    assert desc_op["value"] == "<p>D</p>"
+
+
+def test_build_create_patch_description_html_paragraph_breaks() -> None:
+    ops = build_create_patch(
+        title="T",
+        description="First block\n\nSecond block",
+        active_state="New",
+        template={},
+    )
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    v = desc_op["value"]
+    assert v.count("<p>") == 2
+    assert "First block" in v
+    assert "Second block" in v

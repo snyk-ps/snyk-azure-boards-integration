@@ -1,2 +1,3 @@
 schema: spec-driven
 created: 2026-04-29
+# Spec artifacts aligned with implementation: target–issue title, HTML System.Description, included → snyk_project_name, org slug on org_mappings only

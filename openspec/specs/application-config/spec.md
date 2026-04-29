@@ -13,7 +13,7 @@ The following **top-level keys** define the configuration namespaces (after load
 | Key | Purpose |
 |-----|---------|
 | `azure_boards` | Settings for Azure Boards behavior, including global creation enablement (**P2-FR-11**), non-secret Azure DevOps routing (**`organization`**, **`project`**), **`defaults`** (work item type, states, template), and optional **`org_mappings`**. |
-| `work_item_template` | Placeholder mapping for future work item defaults (type, fields, routing); MAY be empty. |
+| `work_item_template` | Global template mapping (**`tags`**, **`json_patch`**) merged with **`azure_boards.defaults.work_item_template`** and per-mapping **`overrides.work_item_template`**; MAY be empty. |
 | `snyk` | Snyk integration settings, including **group ID** and **severity threshold**; additional keys MAY be added in later changes. |
 | `mapping_store` | Backend for Snyk↔work-item mapping persistence (**P2-FR-7**): **`sqlite`** for local dev/tests, or reserved **`azure_table`** for production-style storage (see `azure-platform`). |
 | `sqlite_path` | Filesystem path to the SQLite database file when `mapping_store` is **`sqlite`**. |
@@ -79,32 +79,66 @@ The **`README.md`** and the tracked sample YAML under **`data/`** SHALL list the
 
 ---
 
+### Requirement: Azure Boards org_mappings entry schema
+
+Each element of **`azure_boards.org_mappings`** SHALL be a mapping containing:
+
+- **`organization`**: non-empty string, Azure DevOps organization name for REST routing for this row.
+- **`project`**: non-empty string, Azure DevOps project name or id for REST routing for this row.
+- **`snyk_org_id`**: non-empty string, Snyk organization UUID for org-scoped Issues API calls for this row.
+- **`overrides`**: optional mapping; when present, its keys SHALL be a subset of those allowed under **`azure_boards.defaults`** (**`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, **`work_item_template`**). Omitted override keys SHALL inherit from **`defaults`** after merge per **`application-config`** merge rules.
+
+The loader SHALL reject entries missing required keys or containing empty strings for **`organization`**, **`project`**, or **`snyk_org_id`** with a clear, non-secret error.
+
+#### Scenario: Valid org_mappings row loads
+
+- **WHEN** YAML contains one **`org_mappings`** row with non-empty **`organization`**, **`project`**, and **`snyk_org_id`**
+- **THEN** loading SHALL succeed and expose that row for **`sync`**
+
+#### Scenario: Invalid org_mappings row rejected
+
+- **WHEN** a row omits **`snyk_org_id`** or supplies an empty **`organization`**
+- **THEN** loading SHALL fail with a clear error that does not include secrets
+
+---
+
 ### Requirement: Sync command requires non-empty Snyk group id
 
-The **`sync`** command SHALL follow the same **`snyk.group_id`** non-empty validation rules as group-scoped **`fetch`**: when merged **`snyk.group_id`** is missing or empty, the process SHALL exit with a clear, non-secret error **before** issuing group-scoped Snyk Issues API calls. Help-only invocations SHALL NOT require `group_id`.
+When merged configuration has **no** non-empty **`azure_boards.org_mappings`** entries (omitted, empty list, or no row with a non-empty **`snyk_org_id`**), the **`sync`** command SHALL follow the same **`snyk.group_id`** non-empty validation rules as group-scoped **`fetch`**: when merged **`snyk.group_id`** is missing or empty, the process SHALL exit with a clear, non-secret error **before** issuing group-scoped Snyk Issues API calls. Help-only invocations SHALL NOT require `group_id`.
 
-#### Scenario: Sync without group id
+When merged configuration includes **at least one** **`org_mappings`** entry with a non-empty **`snyk_org_id`**, the **`sync`** command SHALL use org-scoped Snyk Issues list operations for those entries per **`sync-lifecycle`** and SHALL NOT require **`snyk.group_id`** solely for those org-scoped list calls; **`snyk.group_id`** MAY still be present for other commands or future use.
 
-- **WHEN** the user runs **`sync`** and merged `snyk.group_id` is missing or empty
+#### Scenario: Sync without group id when org_mappings absent
+
+- **WHEN** the user runs **`sync`**, **`org_mappings`** is absent or empty, and merged `snyk.group_id` is missing or empty
 - **THEN** the command SHALL exit non-zero without calling Snyk Issues list for the group
+
+#### Scenario: Sync with org_mappings without group id
+
+- **WHEN** the user runs **`sync`** with at least one valid **`org_mappings`** entry and **`snyk.group_id`** is missing or empty
+- **THEN** the command SHALL proceed with org-scoped issue listing for configured mappings without requiring **`group_id`** for that purpose
 
 ---
 
 ### Requirement: Azure DevOps routing under azure_boards
 
-Under **`azure_boards`**, the configuration SHALL include **`organization`** and **`project`**, each a **non-secret** string used as Azure DevOps routing inputs (Azure DevOps organization name and project name or id as accepted by the REST path templates in `openspec/specs/integration-apis/spec.md`). These values SHALL NOT be used to transport secrets. The **`azure-devops-client`** and related commands SHALL obtain these fields from merged configuration or explicit CLI overrides per this capability’s precedence rules; the integration package SHALL NOT read the YAML file directly.
+Under **`azure_boards`**, the configuration SHALL include **`organization`** and **`project`**, each a **non-secret** string used as Azure DevOps routing inputs when **`org_mappings`** is absent or empty (single-target mode), as documented for REST path templates in `openspec/specs/integration-apis/spec.md`.
 
-The sample configuration file under **`data/`** and the **`README.md`** configuration documentation SHALL include **`azure_boards.organization`** and **`azure_boards.project`** with placeholder non-secret values so operators can run DevOps smoke and future sync flows without inventing keys.
+When **`org_mappings`** is non-empty, each **mapping entry** SHALL include its own **`organization`** and **`project`** strings for Azure DevOps routing for issues processed in that mapping’s iteration; the top-level **`azure_boards.organization`** and **`azure_boards.project`** MAY still be used as documented fallbacks or for commands that do not iterate **`org_mappings`** (exact precedence SHALL match **`application-config`** and implementation documentation for **`org_mappings`**).
+
+These values SHALL NOT be used to transport secrets. The **`azure-devops-client`** and related commands SHALL obtain routing fields from merged configuration or explicit CLI overrides per this capability’s precedence rules; the integration package SHALL NOT read the YAML file directly.
+
+The sample configuration file under **`data/`** and the **`README.md`** configuration documentation SHALL include **`azure_boards.organization`** and **`azure_boards.project`** with placeholder non-secret values and SHALL document **`org_mappings`** entries with per-row **`organization`** and **`project`**.
 
 #### Scenario: Sample lists routing keys
 
 - **WHEN** a developer opens the tracked sample YAML under `data/`
-- **THEN** it SHALL include `azure_boards.organization` and `azure_boards.project` alongside existing `azure_boards` keys
+- **THEN** it SHALL include `azure_boards.organization` and `azure_boards.project` alongside documented `azure_boards` keys, and SHALL document **`defaults`** and optional **`org_mappings`** as specified in this capability
 
 #### Scenario: README documents routing keys
 
 - **WHEN** an operator reads the README Configuration / parameter descriptions
-- **THEN** they SHALL find `azure_boards.organization` and `azure_boards.project` described as non-secret routing fields for Azure DevOps
+- **THEN** they SHALL find `azure_boards.organization` and `azure_boards.project` described, and SHALL find **`org_mappings`** row fields described for multi-target sync
 
 ---
 
@@ -133,7 +167,7 @@ The **`work_item_template`** value SHALL be a **mapping** (YAML dictionary). It 
 For **`sync`**, the following inner keys, when present, SHALL be interpreted by the application:
 
 - **`tags`**: A YAML list of strings representing work item tags to apply on create and update (**P2-FR-10**).
-- **`json_patch`**: A YAML list of JSON Patch operation objects (`op`, `path`, optional `value`) appended or merged into work item create/update patch lists as documented in the active change **`design.md`**, without transporting secrets.
+- **`json_patch`**: A YAML list of JSON Patch operation objects (`op`, `path`, optional `value`) appended or merged into work item create/update patch lists per merge rules in this capability and the README, without transporting secrets.
 
 This change does not require any other inner keys for a valid configuration file.
 
@@ -158,20 +192,20 @@ This change does not require any other inner keys for a valid configuration file
 
 Under **`snyk`**, the configuration defines at least:
 
-- **`group_id`**: String identifying the Snyk **group** (UUID string as used by the Snyk REST Issues API for group-scoped operations). The **resolved** value after applying **defaults → file → environment → CLI** (see precedence requirement) MUST be **non-empty** before issuing **group-scoped** Snyk Issues API requests (list/get by group). **Fetching issues from Snyk** and **`sync`** in this product’s scope use group scope; therefore **`fetch`**, **`sync`**, and any other command that calls those APIs SHALL fail with a clear, non-secret error if `group_id` is missing or empty at execution time. **Help-only** invocations (e.g. `--help`) SHALL NOT require `group_id`.
+- **`group_id`**: String identifying the Snyk **group** (UUID string as used by the Snyk REST Issues API for group-scoped operations). The **resolved** value after applying **defaults → file → environment → CLI** (see precedence requirement) MUST be **non-empty** before issuing **group-scoped** Snyk Issues API requests (list/get by group). **`fetch`** and any command that **only** performs group-scoped list/get SHALL fail with a clear, non-secret error if `group_id` is missing or empty at execution time when that mode is selected. For **`sync`**, when **`azure_boards.org_mappings`** is present with at least one valid row, org-scoped listing does not require **`group_id`** for that path (see **Sync command requires non-empty Snyk group id**). **Help-only** invocations (e.g. `--help`) SHALL NOT require `group_id`.
 - **`severity_threshold`**: A string severity level used as the **minimum** threshold for policy (ordering: `low` < `medium` < `high` < `critical`). The default applied when the key is omitted (after defaulting rules) SHALL be **`high`**, consistent with **P2-FR-1** (High/Critical) as the baseline product behavior.
 
-Additional keys under **`snyk`** MAY be introduced in future changes; the loader SHALL allow forward-compatible preservation or ignore rules as documented in `design.md` for unknown keys (at minimum, documented behavior for known keys).
+Additional keys under **`snyk`** MAY be introduced in future changes; the loader SHALL allow forward-compatible preservation or ignore rules as documented for unknown keys (at minimum, documented behavior for known keys).
 
 #### Scenario: Group ID present after merge
 
 - **WHEN** the merged `snyk.group_id` is a non-empty string
 - **THEN** group-scoped Snyk Issues API calls MAY use that value
 
-#### Scenario: Fetch or sync without group ID
+#### Scenario: Fetch or group sync without group ID
 
-- **WHEN** the user runs a command that performs group-scoped Snyk Issues API calls (e.g. **`fetch`** or **`sync`**) and the resolved `group_id` is missing or empty
-- **THEN** the command SHALL exit without issuing that API call, with a clear error that does not include secrets
+- **WHEN** the user runs **`fetch`** or **`sync`** in group-only mode (no effective **`org_mappings`**) and the resolved `group_id` is missing or empty
+- **THEN** the command SHALL exit without issuing group-scoped Snyk Issues API calls, with a clear error that does not include secrets
 
 #### Scenario: Severity threshold default
 
@@ -182,7 +216,7 @@ Additional keys under **`snyk`** MAY be introduced in future changes; the loader
 
 ### Requirement: Configuration loading and defaults
 
-The application SHALL load YAML from a **filesystem path** supplied via CLI (e.g. `--config`) and/or a documented environment variable for the path, as implemented per `design.md`. After parsing, the implementation SHALL apply **defaults** for optional keys (including `azure_boards.create_new_work_items` defaulting to **`true`**, `snyk.severity_threshold` defaulting to **`high`**, **`mapping_store`** defaulting to **`sqlite`**, and **`sqlite_path`** defaulting to **`data/mapping_store.sqlite`** unless specified otherwise in `design.md`), then merge **environment** and **CLI** layers per the **Precedence** requirement before validating command-specific requirements (e.g. non-empty `group_id` for **`fetch`** or **`sync`**). The loader SHALL produce a clear, non-secret error when the file is missing, unreadable, or not valid YAML.
+The application SHALL load YAML from a **filesystem path** supplied via CLI (e.g. `--config`) and/or a documented environment variable for the path. After parsing, the implementation SHALL apply **defaults** for optional keys (including `azure_boards.create_new_work_items` defaulting to **`true`**, `snyk.severity_threshold` defaulting to **`high`**, **`mapping_store`** defaulting to **`sqlite`**, and **`sqlite_path`** defaulting to **`data/mapping_store.sqlite`** unless specified otherwise), then merge **environment** and **CLI** layers per the **Precedence** requirement before validating command-specific requirements (e.g. non-empty `group_id` for **`fetch`** or group-mode **`sync`** per this capability). The loader SHALL produce a clear, non-secret error when the file is missing, unreadable, or not valid YAML.
 
 #### Scenario: Defaults applied
 
@@ -237,18 +271,18 @@ Secrets SHALL continue to come **only** from environment variables or secret sto
 
 ### Requirement: README configuration documentation
 
-The repository **`README.md`** SHALL include a completed **`Configuration`** section (including **`Parameter Descriptions`**) that documents: YAML file location and format overview; **precedence** (**defaults → file → env → CLI**, CLI wins); that **YAML is the intended IaC / deployment source** and CLI is primarily for **local overrides**; CLI flags for config; supported environment variables (including overrides and secrets policy); defaults and optional omissions; **`mapping_store`**, **`sqlite_path`**, **`MAPPING_STORE`**, **`MAPPING_STORE_SQLITE_PATH`**, and **`--mapping-store-sqlite-path`**; that the SQLite database is **local non-secret persistence** and **secrets MUST NOT** be stored in that path or file; **`azure_boards.defaults`** with **`work_item_type`**, **`work_item_state_active`**, and **`work_item_state_closed`** (defaults **`Task`**, **`New`**, **`Closed`**) and the requirement that operators set valid values for their process; and an **example YAML** snippet (or pointer to the **`data/`** sample) that reflects the keys `azure_boards`, `work_item_template`, `snyk`, `mapping_store`, and `sqlite_path` without embedding real tokens or secrets.
+The repository **`README.md`** SHALL include a completed **`Configuration`** section (including **`Parameter Descriptions`**) that documents: YAML file location and format overview; **precedence** (**defaults → file → env → CLI**, CLI wins); that **YAML is the intended IaC / deployment source** and CLI is primarily for **local overrides**; CLI flags for config; supported environment variables (including overrides and secrets policy); defaults and optional omissions; **`mapping_store`**, **`sqlite_path`**, **`MAPPING_STORE`**, **`MAPPING_STORE_SQLITE_PATH`**, and **`--mapping-store-sqlite-path`**; that the SQLite database is **local non-secret persistence** and **secrets MUST NOT** be stored in that path or file; **`azure_boards.defaults`** for **`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, and **`work_item_template`**, with defaults (**`Task`**, **`New`**, **`Closed`**) where applicable, and that flat **`work_item_*`** keys under **`azure_boards`** are **not** supported; **`azure_boards.org_mappings`** with **`organization`**, **`project`**, **`snyk_org_id`**, and optional **`overrides`**; that assignee MAY be set via **`json_patch`** targeting **`/fields/System.AssignedTo`** under merged **`work_item_template`** semantics; and an **example YAML** snippet (or pointer to the **`data/`** sample) that reflects the keys `azure_boards`, `work_item_template`, `snyk`, `mapping_store`, and `sqlite_path` without embedding real tokens or secrets.
 
 #### Scenario: Operator can configure without reading source
 
 - **WHEN** an operator reads only the README Configuration section
-- **THEN** they SHALL be able to construct a valid YAML file and run the CLI with a config path using documented flags and variables, and SHALL understand when **`group_id`** is required for Snyk fetch and **`sync`**
+- **THEN** they SHALL be able to construct a valid YAML file and run the CLI with a config path using documented flags and variables, and SHALL understand when **`group_id`** is required for Snyk fetch and **`sync`**, including when **`org_mappings`** is used
 
 ---
 
 ### Requirement: Sample configuration file under `data/`
 
-The repository SHALL include at least one **sample** YAML configuration file under the **`data/`** directory that conforms to the documented schema (placeholder values only; no secrets). The sample SHALL include **`mapping_store`** and **`sqlite_path`** with placeholder non-secret values. The sample SHALL list the sync-related strings under **`azure_boards.defaults`** (**`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**) with their documented defaults and comments stating that values MUST exist for the target process. The sample SHALL be **tracked in version control** and SHALL **not** be excluded by **`.gitignore`** (or equivalent ignore rules), so it remains available in every clone for documentation and local testing (e.g. `--config` pointing at that path).
+The repository SHALL include at least one **sample** YAML configuration file under the **`data/`** directory that conforms to the documented schema (placeholder values only; no secrets). The sample SHALL include **`mapping_store`** and **`sqlite_path`** with placeholder non-secret values. The sample SHALL document **`azure_boards.defaults`** with **`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, and optional **`work_item_template`**, with defaults or comments consistent with this capability. The sample SHALL include a commented example of **`azure_boards.org_mappings`** (optional list) with placeholder **`organization`**, **`project`**, and **`snyk_org_id`**. The sample SHALL be **tracked in version control** and SHALL **not** be excluded by **`.gitignore`** (or equivalent ignore rules), so it remains available in every clone for documentation and local testing (e.g. `--config` pointing at that path).
 
 #### Scenario: Sample present and tracked
 
@@ -263,7 +297,7 @@ The repository SHALL include at least one **sample** YAML configuration file und
 #### Scenario: Sample shows sync-related azure_boards keys
 
 - **WHEN** a developer opens the tracked sample YAML
-- **THEN** it SHALL include **`azure_boards.defaults`** with **`work_item_type`**, **`work_item_state_active`**, and **`work_item_state_closed`** (defaults or placeholders consistent with this capability)
+- **THEN** it SHALL include documented **`azure_boards.defaults`** for sync-related work item strings with defaults or placeholders consistent with this capability
 
 ---
 

@@ -19,6 +19,20 @@ Responses use **`application/vnd.api+json`** unless stated otherwise.
 | List issues (org) | `GET` | `/orgs/{org_id}/issues` |
 | Get issue (org) | `GET` | `/orgs/{org_id}/issues/{issue_id}` |
 
+### Normative: Snyk Issues API org-scoped list and get
+
+The normative **Snyk REST Issues** operations SHALL include **org** scope alongside **group** scope. Org-scoped operations SHALL use the same base URL, **`version`** query parameter expectations, and **`application/vnd.api+json`** media type conventions as the existing group-scoped Issues operations unless a future change documents an exception.
+
+#### Scenario: Org list path documented
+
+- **WHEN** implementers need to call the Snyk Issues API for all issues in a Snyk organization
+- **THEN** they SHALL find **`GET /orgs/{org_id}/issues`** defined in this capability with the same normative status as the group list operation
+
+#### Scenario: Org get path documented
+
+- **WHEN** implementers need to retrieve a single issue in org scope
+- **THEN** they SHALL find **`GET /orgs/{org_id}/issues/{issue_id}`** defined in this capability
+
 Other issue-related routes (for example under **`/orgs/{org_id}/packages/...`**) are defined in the same spec if the implementation needs them.
 
 ## Azure DevOps REST API reference

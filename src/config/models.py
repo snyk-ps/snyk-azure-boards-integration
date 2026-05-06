@@ -25,6 +25,7 @@ class AzureBoardsDefaults:
     work_item_type: str = "Task"
     work_item_state_active: str = "New"
     work_item_state_closed: str = "Closed"
+    work_item_description_appendix: str = ""
     work_item_template: dict[str, Any] = field(default_factory=dict)
 
 

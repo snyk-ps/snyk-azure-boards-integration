@@ -68,6 +68,7 @@ def _default_tree() -> dict[str, Any]:
                 "work_item_type": "Task",
                 "work_item_state_active": "New",
                 "work_item_state_closed": "Closed",
+                "work_item_description_appendix": "",
                 "work_item_template": {},
             },
             "org_mappings": [],
@@ -348,6 +349,13 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
     if not isinstance(wit_tmpl, dict):
         raise ConfigError("azure_boards.defaults.work_item_template must be a mapping")
 
+    appendix_raw = defaults_raw.get("work_item_description_appendix", "")
+    if appendix_raw is not None and not isinstance(appendix_raw, str):
+        raise ConfigError(
+            "azure_boards.defaults.work_item_description_appendix must be a string",
+        )
+    appendix = str(appendix_raw or "")
+
     return AzureBoardsDefaults(
         organization=org,
         project=proj,
@@ -359,6 +367,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         work_item_type=wit_type,
         work_item_state_active=wit_active,
         work_item_state_closed=wit_closed,
+        work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
     )
 

@@ -1,5 +1,8 @@
 """Tests for ``sync.effective`` helpers."""
 
+import pytest
+
+from config import ConfigError
 from config.models import (
     AppConfig,
     AzureBoardsConfig,
@@ -109,3 +112,43 @@ def test_effective_work_item_template_merge() -> None:
         boards=boards,
     )
     assert out["tags"] == ["global", "default-tag", "row"]
+
+
+def test_boards_for_org_mapping_appendix_override() -> None:
+    app = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            defaults=AzureBoardsDefaults(
+                work_item_description_appendix="default appendix",
+            ),
+        ),
+        work_item_template={},
+        snyk=SnykConfig(),
+    )
+    m = OrgMapping(
+        organization="o",
+        project="p",
+        snyk_org_id="s",
+        snyk_org_slug="slug",
+        overrides={"work_item_description_appendix": "row appendix"},
+    )
+    b = boards_for_org_mapping(app, m)
+    assert b.defaults.work_item_description_appendix == "row appendix"
+
+
+def test_boards_for_org_mapping_rejects_non_string_appendix_override() -> None:
+    app = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            defaults=AzureBoardsDefaults(),
+        ),
+        work_item_template={},
+        snyk=SnykConfig(),
+    )
+    m = OrgMapping(
+        organization="o",
+        project="p",
+        snyk_org_id="s",
+        snyk_org_slug="slug",
+        overrides={"work_item_description_appendix": 99},
+    )
+    with pytest.raises(ConfigError, match="work_item_description_appendix must be a string"):
+        boards_for_org_mapping(app, m)

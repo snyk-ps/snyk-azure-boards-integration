@@ -357,3 +357,55 @@ def test_org_mappings_rejects_empty_snyk_org(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="snyk_org_id"):
         load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_defaults_work_item_description_appendix_optional(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    organization: o\n"
+        "    project: p\n"
+        "snyk:\n"
+        "  group_id: g\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.work_item_description_appendix == ""
+
+
+def test_defaults_work_item_description_appendix_from_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    organization: o\n"
+        "    project: p\n"
+        "    work_item_description_appendix: |\n"
+        "      Line one\n"
+        "      Line two\n"
+        "snyk:\n"
+        "  group_id: g\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert "Line one" in c.azure_boards.defaults.work_item_description_appendix
+    assert "Line two" in c.azure_boards.defaults.work_item_description_appendix
+
+
+def test_defaults_work_item_description_appendix_rejects_non_string(
+    tmp_path: Path,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    organization: o\n"
+        "    project: p\n"
+        "    work_item_description_appendix: 42\n"
+        "snyk:\n"
+        "  group_id: g\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="work_item_description_appendix must be a string"):
+        load_app_config(config_path=str(p), cli_group_id=None)

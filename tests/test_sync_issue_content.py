@@ -1,5 +1,8 @@
 """Tests for Snyk → work item text builders."""
 
+import pytest
+
+from sync import issue_content as issue_content_mod
 from sync.issue_content import (
     build_system_description,
     effective_target_label_for_title,
@@ -162,3 +165,72 @@ def test_build_system_description_includes_narrative_and_link() -> None:
         "https://app.snyk.io/org/acme/project/proj-uuid"
         "#issue-SNYK-JS-VM2-5415299"
     ) in text
+
+
+def test_build_system_description_appendix_appended() -> None:
+    attrs: dict = {"title": "X", "key": "K", "coordinates": []}
+    appendix = "Internal: request access at https://example.internal/snyk"
+    text = build_system_description(
+        attrs,
+        snyk_org_slug="o",
+        project_id="p",
+        issue_key="K",
+        description_appendix=appendix,
+    )
+    assert text.endswith(appendix)
+    assert "Open in Snyk" in text
+
+
+def test_build_system_description_whitespace_appendix_skipped() -> None:
+    attrs: dict = {"title": "X", "key": "K", "coordinates": []}
+    base = build_system_description(
+        attrs,
+        snyk_org_slug="o",
+        project_id="p",
+        issue_key="K",
+        description_appendix="",
+    )
+    assert (
+        build_system_description(
+            attrs,
+            snyk_org_slug="o",
+            project_id="p",
+            issue_key="K",
+            description_appendix="   \n\t  ",
+        )
+        == base
+    )
+
+
+def test_build_system_description_truncation_covers_appendix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(issue_content_mod, "_MAX_DESCRIPTION_CHARS", 260)
+    attrs: dict = {"title": "X", "key": "K", "coordinates": []}
+    appendix = "x" * 500
+    text = build_system_description(
+        attrs,
+        snyk_org_slug="o",
+        project_id="p",
+        issue_key="K",
+        description_appendix=appendix,
+    )
+    assert "[description truncated for Azure Boards field size]" in text
+    assert len(text) <= 260
+
+
+def test_build_create_patch_escapes_special_chars_in_description() -> None:
+    """Appendix text uses the same description → HTML path as Snyk body text."""
+    from sync.patch_build import build_create_patch
+
+    plain = "Open\n\nRequest access: x & y <https://example.com>"
+    ops = build_create_patch(
+        title="T",
+        description=plain,
+        active_state="New",
+        template={},
+    )
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    val = desc_op["value"]
+    assert "&amp;" in val
+    assert "&lt;" in val

@@ -353,6 +353,7 @@ def _sync_one_issue(
         snyk_project_name=snyk_pn or None,
         snyk_project_origin=snyk_po or None,
         severity=severity or None,
+        description_appendix=ab.defaults.work_item_description_appendix,
     )
 
     prev_snyk = row.snyk_status if row is not None else None

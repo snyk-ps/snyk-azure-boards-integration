@@ -10,6 +10,7 @@ from config.policy_parse import (
     normalize_severity,
     validate_issues_sync_from,
 )
+from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig, AzureBoardsDefaults, OrgMapping
 from config.template_merge import merge_work_item_templates
 
@@ -125,6 +126,15 @@ def _merged_defaults_with_overrides(
         or base.work_item_state_closed,
     )
 
+    appendix = base.work_item_description_appendix
+    if "work_item_description_appendix" in o:
+        raw_ap = o["work_item_description_appendix"]
+        if raw_ap is not None and not isinstance(raw_ap, str):
+            raise ConfigError(
+                "org_mappings[].overrides.work_item_description_appendix must be a string",
+            )
+        appendix = str(raw_ap or "")
+
     wit_tmpl = dict(base.work_item_template)
 
     return AzureBoardsDefaults(
@@ -138,6 +148,7 @@ def _merged_defaults_with_overrides(
         work_item_type=str(wit_type).strip() or base.work_item_type,
         work_item_state_active=str(wit_active).strip() or base.work_item_state_active,
         work_item_state_closed=str(wit_closed).strip() or base.work_item_state_closed,
+        work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
     )
 

@@ -445,8 +445,13 @@ def build_system_description(
     snyk_project_name: str | None = None,
     snyk_project_origin: str | None = None,
     severity: str | None = None,
+    description_appendix: str = "",
 ) -> str:
-    """Multi-line plain text for ``System.Description``."""
+    """Multi-line plain text for ``System.Description``.
+
+    When ``description_appendix`` is non-empty after stripping leading and trailing
+    whitespace, it is appended after built-in sections (blank line separation).
+    """
     pkg_line = primary_package_line(attrs)
     narrative = str(attrs.get("description") or "").strip()
     remedies = remedy_section_lines(attrs)
@@ -542,9 +547,13 @@ def build_system_description(
             link_lines,
         ],
     )
-    if len(body) <= _MAX_DESCRIPTION_CHARS:
-        return body
+    appendix_stripped = str(description_appendix or "").strip()
+    combined = body
+    if appendix_stripped:
+        combined = body + "\n\n" + appendix_stripped
+    if len(combined) <= _MAX_DESCRIPTION_CHARS:
+        return combined
     trunc = "[description truncated for Azure Boards field size]\n"
     keep = _MAX_DESCRIPTION_CHARS - len(trunc)
-    return body[:keep] + trunc
+    return combined[:keep] + trunc
 

@@ -19,6 +19,9 @@ azure_boards:
     work_item_type: Task
     work_item_state_active: New
     work_item_state_closed: Closed
+    # Optional: plain text appended after the auto-generated work item description (one extra block).
+    # work_item_description_appendix: |
+    #   Internal: request Snyk access at https://example.internal/access
     work_item_template:
       tags:
         - Snyk
@@ -38,6 +41,7 @@ azure_boards:
   #     overrides:
   #       severity_threshold: critical
   #       work_item_type: Task
+  #       # work_item_description_appendix: "Note for this ADO project only."
   #       # work_item_template:
   #       #   tags: ["TeamA"]
 

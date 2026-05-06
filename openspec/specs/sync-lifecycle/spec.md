@@ -40,9 +40,20 @@ Populate each created/updated work item with at least:
 
 ## Normative requirements
 
+### Requirement: Persist Snyk project display metadata on mapping rows
+
+The **`sync`** run SHALL persist **`snyk_project_name`** (from **`GET /orgs/{org_id}/projects/{project_id}`** **`attributes.name`**) and **`snyk_project_origin`** (from **`attributes.origin`**) on the mapping store row for the natural key, updating values when refreshed per **`design.md`**, so routine sync loops avoid repeating project GET for unchanged rows.
+
+#### Scenario: Upsert stores project metadata
+
+- **WHEN** sync obtains non-empty project **`name`** and **`origin`** from the Snyk Projects API for an issue’s **`project_id`**
+- **THEN** the mapping upsert SHALL persist **`snyk_project_name`** and **`snyk_project_origin`** alongside existing routing fields
+
+---
+
 ### Requirement: One sync run orchestrates Snyk list, mapping, and Azure Boards updates
 
-The application SHALL provide a **`sync`** command (argparse subcommand implemented under **`src/commands/`**, dispatched from **`src/main.py`**) that performs **one** synchronization run by invoking orchestration implemented under **`src/sync/`** (Python package `sync`). That run SHALL load merged configuration, obtain issues from the Snyk Issues API using **group-scoped** list operations **when `azure_boards.org_mappings` is absent or empty**, or using **org-scoped** list operations **for each non-empty `org_mappings` row** when **`org_mappings`** is present and non-empty, with filters aligned to **P2-FR-1** and **`snyk.severity_threshold`**, read and write rows through the **`MappingStore`** abstraction, and invoke the **Azure DevOps** client for work item create, update, close, and optional comments. For each **`org_mappings`** row, the run SHALL use that row’s **`organization`**, **`project`**, and **effective** work item settings (**`defaults`** merged with that row’s **`overrides`**) and **effective** **`work_item_template`** per **`application-config`** merge rules. The sync run SHALL obtain **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** only via the same environment-variable rules as the respective clients; it SHALL NOT introduce new secret sources.
+The application SHALL provide a **`sync`** command (argparse subcommand implemented under **`src/commands/`**, dispatched from **`src/main.py`**) that performs **one** synchronization run by invoking orchestration implemented under **`src/sync/`** (Python package `sync`). That run SHALL load merged configuration, obtain issues from the Snyk Issues API using **group-scoped** list operations **when `azure_boards.org_mappings` is absent or empty**, or using **org-scoped** list operations **for each non-empty `org_mappings` row** when **`org_mappings`** is present and non-empty, with filters aligned to **P2-FR-1**, **`azure_boards.defaults.severity_threshold`**, **`issues_sync_from`**, **`create_only_when_fix_available`** (when enabled), and **`effective_severity_level`** encoding per **`snyk-issues-client`**, read and write rows through the **`MappingStore`** abstraction, and invoke the **Azure DevOps** client for work item create, update, close, and optional comments. For each **`org_mappings`** row, the run SHALL use that row’s effective **`organization`**, **`project`**, and **effective** work item and policy settings (**`defaults`** merged with that row’s **`overrides`**) and **effective** **`work_item_template`** per **`application-config`** merge rules. The sync run SHALL obtain **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** only via the same environment-variable rules as the respective clients; it SHALL NOT introduce new secret sources.
 
 #### Scenario: Sync entrypoint lives under commands
 
@@ -62,7 +73,7 @@ The application SHALL provide a **`sync`** command (argparse subcommand implemen
 #### Scenario: Multi-mapping sync uses org-scoped Snyk list per row
 
 - **WHEN** merged configuration includes at least one valid **`org_mappings`** entry
-- **THEN** the run SHALL list issues from Snyk using **`snyk_org_id`** for each such entry and SHALL route Azure DevOps operations for issues from that list to that entry’s **`organization`** and **`project`**
+- **THEN** the run SHALL list issues from Snyk using **`snyk_org_id`** for each such entry and SHALL route Azure DevOps operations for issues from that list to that entry’s effective **`organization`** and **`project`**
 
 ---
 
@@ -140,11 +151,11 @@ The **close path** for Azure Boards SHALL apply when derived **`snyk_status`** i
 
 ### Requirement: P2-FR-11 creation disabled semantics
 
-When **`azure_boards.create_new_work_items`** is **`false`**, the **`sync`** command SHALL NOT create new Azure Boards work items and SHALL NOT insert new mapping rows. It SHALL still update and close work items that already have a mapping row for the same natural key **`(group_id, org_id, project_id, issue_id)`**. Findings with **no** mapping row SHALL be left untouched (no work item creation and no new mapping insert), even if they satisfy **P2-FR-1**.
+When **`azure_boards.defaults.create_new_work_items`** is **`false`** (after merge with **`org_mappings[].overrides`** where applicable), the **`sync`** command SHALL NOT create new Azure Boards work items and SHALL NOT insert new mapping rows. It SHALL still update and close work items that already have a mapping row for the same natural key **`(group_id, org_id, project_id, issue_id)`**. Findings with **no** mapping row SHALL be left untouched (no work item creation and no new mapping insert), even if they satisfy **P2-FR-1**.
 
 #### Scenario: No create and no new mapping when disabled
 
-- **WHEN** `create_new_work_items` is `false` and a qualifying Snyk issue has no mapping row
+- **WHEN** **`azure_boards.defaults.create_new_work_items`** is `false` and a qualifying Snyk issue has no mapping row
 - **THEN** the run SHALL NOT call Azure DevOps create and SHALL NOT insert a mapping row for that issue
 
 #### Scenario: Updates and closes still allowed when disabled
@@ -167,12 +178,27 @@ On work item **create**, the application SHALL **not** set **`System.AssignedTo`
 
 ### Requirement: P2-FR-8 reopen creates a new work item
 
-When a finding previously warranted a **closed** Boards work item under this policy (stored derived **`snyk_status`** was **`resolved`** or **`ignored`**) and later satisfies **`ignored` == false** and **`status` == `open`**, the application SHALL **create a new** Azure Boards work item for the active finding. The **prior** work item SHALL remain in its closed disposition; the application SHALL **not** silently reactivate the old work item as the active ticket for that finding.
+When a finding previously warranted a **closed** Boards work item under this policy (stored derived **`snyk_status`** was **`resolved`** or **`ignored`**) and later satisfies **`ignored` == false** and **`status` == `open`**, behavior SHALL be governed by merged **`azure_boards.defaults.reopen_work_item_policy`** (and per-row **`overrides`**):
 
-#### Scenario: New work item id replaces mapping on reopen
+- When **`new_work_item`**, the application SHALL **create a new** Azure Boards work item for the active finding. The **prior** work item SHALL remain in its closed disposition unless separately updated by policy; the application SHALL **not** silently reactivate the old work item as the active ticket.
+- When **`reopen_existing`**, the application SHALL attempt to transition the **existing** mapped work item (**`work_item_id`** on the mapping row) to **`azure_boards.defaults.work_item_state_active`** (merged). If that work item **cannot be found** (for example Azure DevOps returns not found for the stored id), the application SHALL **fallback** to the **`new_work_item`** path for this transition and SHALL record the prior id in the audit comment.
 
-- **WHEN** a new work item is created for a reopened finding with the same natural key
+In all cases, **`sync`** SHALL add an audit comment per **P2-FR-9** on the **active** work item being commented (new or reopened): when **`new_work_item`** creates a replacement ticket, the comment SHALL reference the **previous** work item id and SHOULD include a Boards URL when safely constructible; when **`reopen_existing`** succeeds, the comment SHALL document the lifecycle transition.
+
+#### Scenario: New work item id replaces mapping on reopen policy new_work_item
+
+- **WHEN** effective **`reopen_work_item_policy`** is **`new_work_item`** and a new work item is created for a reopened finding with the same natural key
 - **THEN** the mapping store SHALL upsert the row so **`work_item_id`** (and related fields) refer to the **new** work item
+
+#### Scenario: Reopen existing transitions mapped work item when found
+
+- **WHEN** effective **`reopen_work_item_policy`** is **`reopen_existing`** and the stored **`work_item_id`** exists in Azure DevOps
+- **THEN** the sync SHALL transition that work item toward **`work_item_state_active`** and SHALL not create a second open work item for the same natural key unless fallback applies
+
+#### Scenario: Reopen existing falls back when work item missing
+
+- **WHEN** effective **`reopen_work_item_policy`** is **`reopen_existing`** but the stored **`work_item_id`** no longer exists in Azure DevOps
+- **THEN** the sync SHALL create a new work item as in **`new_work_item`** and the audit trail SHALL mention the missing prior id
 
 ---
 
@@ -207,15 +233,17 @@ On work item **create** and **update**, the application SHALL apply **tags** sup
 
 The **primary package** SHALL be taken from the **first** `coordinates[]` element in API order that contains a `representations[]` entry with a **`dependency`** field set.
 
+For **code** issues (**`attributes.type`** indicating code analysis, for example **`code`**), the description assembly SHALL include **file path** and **line range** derived from **`coordinates[].representations[].sourceLocation`** when present (see **`data/sample_coord.local.json`**: **`file`**, **`region.start.line`**, **`region.end.line`**).
+
 The human-readable text used for **`System.Title`** on create SHALL be **`{target} - {issue}`** when **`target`** can be resolved, where:
 
 - **`issue`** is **`attributes.title`** when non-empty; otherwise the primary package line (**`package@version`**); otherwise a short fallback label.
-- **`target`** SHALL match the description context: prefer **`snyk_project_name`** on the normalized/enriched issue record when non-empty; otherwise **`{azure_boards.organization} / {azure_boards.project}`** for the active Azure DevOps routing context. When no **`target`** label can be resolved, **`System.Title`** SHALL be **`issue`** only (no **` - `** prefix).
+- **`target`** SHALL prefer **`snyk_project_name`** persisted on the mapping row when non-empty; next **`snyk_project_name`** on the normalized/enriched issue record when non-empty; next **`{effective_organization} / {effective_project}`** from merged **`azure_boards.defaults`** and **`org_mappings`** context. When no **`target`** label can be resolved, **`System.Title`** SHALL be **`issue`** only (no **` - `** prefix).
 
 For **`System.Description`**, the application SHALL assemble content in **section blocks** (blank-line-separated in plain assembly before HTML wrapping) so operators see distinct paragraphs in Azure Boards. Assembly SHALL include at minimum:
 
-1. **Context:** Azure Boards target (**organization / project**), **Snyk target** label when **`snyk_project_name`** is known, **severity**, **Snyk issue key**.
-2. **Finding:** primary package and optional path hints from **`coordinates[]`** when present.
+1. **Context:** **Snyk project** display name and **origin** when known (**`snyk_project_name`**, **`snyk_project_origin`** from mapping row or APIs), **severity**, **Snyk issue key**.
+2. **Finding:** primary package and optional path hints from **`coordinates[]`** when present; for **code** issues, **file + lines** per **`sourceLocation`** when present.
 3. **How to fix:** recommended upgrade/version strings extracted from **`coordinates[].remedies`** (**`upgradeTo`**, **`changes[].upgradeTo`**, etc.) and dependency representation hints when present; formatted **`coordinates[].remedies`** narrative (**`type: description`** style when structured).
 4. **`attributes.description`** when present (vulnerability narrative).
 5. **Classification:** **P2-FR-5.2**, **P2-FR-5.3**, and fix availability (**P2-FR-5.5** subset—see below).
@@ -229,9 +257,9 @@ If fields remain absent after GET, the description SHALL still include all other
 - **WHEN** multiple coordinates include dependency representations
 - **THEN** the sync SHALL select the first such coordinate in API order for the primary package line
 
-#### Scenario: Title uses target prefix when Snyk project name exists
+#### Scenario: Title uses mapping-backed Snyk project name when present
 
-- **WHEN** **`snyk_project_name`** is non-empty and **`attributes.title`** is non-empty
+- **WHEN** **`snyk_project_name`** on the mapping row is non-empty and **`attributes.title`** is non-empty
 - **THEN** **`System.Title`** SHALL begin with **`{snyk_project_name} - `** followed by the issue title text (subject to length limits)
 
 #### Scenario: Description includes narrative when attributes.description is present
@@ -243,6 +271,11 @@ If fields remain absent after GET, the description SHALL still include all other
 
 - **WHEN** the list payload lacks **`description`** or **`remedies`** and GET-by-id returns them for the same issue
 - **THEN** **`System.Description`** SHALL incorporate those fields after the GET merge
+
+#### Scenario: Code issue includes file and line location when sourceLocation present
+
+- **WHEN** **`sourceLocation.file`** and line fields exist under **`coordinates[].representations[]`**
+- **THEN** **`System.Description`** SHALL include human-readable file path and line range for that finding
 
 ---
 
@@ -284,6 +317,8 @@ The fragment SHALL be **`#issue-`** immediately followed by **`attributes.key`**
 
 The application SHALL NOT emit **`https://app.snyk.io/group/{group_id}/issues/{id}`** or other deprecated **best-effort** link patterns as the primary **P2-FR-5.4** link line.
 
+When the URL is rendered inside **`System.Description`**, it SHALL appear as an HTML **hyperlink** (**`<a href="...">...</a>`**) with **href** set to the canonical URL and link text that identifies the issue in Snyk, subject to the same HTML entity escaping rules as other dynamic description content (**HTML-safe** assembly).
+
 #### Scenario: Link uses config slug and API identifiers
 
 - **WHEN** sync composes the **P2-FR-5.4** link for an issue with known **`snyk_org_slug`**, **`scan_item`**, and **`attributes.key`**
@@ -293,6 +328,11 @@ The application SHALL NOT emit **`https://app.snyk.io/group/{group_id}/issues/{i
 
 - **WHEN** **`attributes.key`** is `SNYK-PYTHON-H11-10293728`
 - **THEN** the URL fragment SHALL end with `#issue-SNYK-PYTHON-H11-10293728`
+
+#### Scenario: Description renders link as HTML anchor
+
+- **WHEN** the **P2-FR-5.4** URL is written into **`System.Description`**
+- **THEN** the stored HTML SHALL include a single **`a`** element with **`href`** equal to the canonical HTTPS URL (escaped as required)
 
 ---
 
@@ -331,7 +371,7 @@ Every **`POST`** work item **create** SHALL include a JSON Patch operation that 
 
 ### Requirement: Work item type and Boards state names from configuration
 
-Work item **create** SHALL use **`azure_boards.work_item_type`** as the WIT **`$type`** segment (default **`Task`** when omitted after merge). When a work item shall represent an **active** finding, the sync SHALL transition or set Boards **`System.State`** to **`azure_boards.work_item_state_active`** (default **`New`**). When a finding is on the **close path** (**derived `snyk_status`** is **`resolved`** or **`ignored`**), the sync SHALL set the Boards closed disposition using **`azure_boards.work_item_state_closed`** (default **`Closed`**). Operators MUST configure values that exist for their process; the application SHALL treat these as opaque strings after non-empty validation.
+Work item **create** SHALL use the merged effective **`work_item_type`** from **`azure_boards.defaults`** (and **`org_mappings[].overrides`**) as the WIT **`$type`** segment (default **`Task`** when omitted after merge). When a work item shall represent an **active** finding, the sync SHALL transition or set Boards **`System.State`** to the merged **`work_item_state_active`**. When a finding is on the **close path** (**derived `snyk_status`** is **`resolved`** or **`ignored`**), the sync SHALL set the Boards closed disposition using the merged **`work_item_state_closed`**. Operators MUST configure values that exist for their process; the application SHALL treat these as opaque strings after non-empty validation.
 
 #### Scenario: Defaults apply when keys omitted
 

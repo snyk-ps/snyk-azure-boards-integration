@@ -149,7 +149,7 @@ The sample configuration file under **`data/`** and the **`README.md`** configur
 
 ### Requirement: Snyk section with group ID and severity threshold
 
-Under **`snyk`**, the configuration defines at least:
+The **`snyk`** section SHALL surface **`group_id`** for group-scoped Issues API calls and SHALL NOT accept **`severity_threshold`**; operators MUST use **`azure_boards.defaults.severity_threshold`** instead. Under **`snyk`**, the configuration defines at least:
 
 - **`group_id`**: String identifying the Snyk **group** (UUID string as used by the Snyk REST Issues API for group-scoped operations). The **resolved** value after applying **defaults → file → environment → CLI** (see precedence requirement) MUST be **non-empty** before issuing **group-scoped** Snyk Issues API requests (list/get by group). **`fetch`** and any command that **only** performs group-scoped list/get SHALL fail with a clear, non-secret error if `group_id` is missing or empty at execution time when that mode is selected. For **`sync`**, when **`azure_boards.org_mappings`** is present with at least one valid row, org-scoped listing does not require **`group_id`** for that path (see **Sync command requires non-empty Snyk group id**). **Help-only** invocations (e.g. `--help`) SHALL NOT require `group_id`.
 

@@ -35,6 +35,8 @@ The integration runs as a container on **Azure Container Apps**. It runs on a **
 | Azure DevOps | **Project** | Team project containing the work item. |
 | Azure DevOps | **Work item ID** | Boards work item linked to this Snyk issue. |
 | Azure DevOps | **Work item status** | Boards work item state persisted on the mapping row (distinct from Snyk status). |
+| Snyk | **Project display name** | Human-readable project label from Snyk Projects API (**`attributes.name`**), when populated. |
+| Snyk | **Project origin** | Origin label from the same API (**`attributes.origin`**), when populated. |
 
 Additional columns (for example **`created_at`** / **`updated_at`** row metadata in UTC ISO 8601, last sync time, prior work item ids for **P2-FR-8** audit, or issue severity snapshot) may be added by the implementation but are not required beyond the normative mapping requirements below.
 
@@ -87,6 +89,8 @@ The durable mapping store SHALL persist at minimum the following attributes per 
 | `project` | Azure DevOps team project containing the work item. |
 | `work_item_id` | Azure Boards work item id linked to this Snyk issue. |
 | `work_item_status` | Azure Boards work item state as persisted for this mapping row. |
+| `snyk_project_name` | Display name from Snyk **`GET /orgs/{org_id}/projects/{project_id}`** **`attributes.name`** when known (may be empty until populated). |
+| `snyk_project_origin` | Origin label from the same project **`attributes.origin`** when known (may be empty until populated). |
 
 The logical identity of one **current** mapping for a Snyk issue in a given scope SHALL be **`(group_id, org_id, project_id, issue_id)`**. The implementation SHALL enforce **at most one row** per that tuple via a **UNIQUE** constraint on those four columns (or equivalent enforcement).
 

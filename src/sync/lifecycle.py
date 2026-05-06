@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Final
 
-from config.loader import SEVERITY_LEVELS
+from config.policy_parse import SEVERITY_LEVELS
 
 
 DERIVED_OPEN: Final = "open"
@@ -56,7 +56,7 @@ def effective_severity_levels_from_threshold(threshold: str) -> tuple[str, ...]:
     """
     Build ``effective_severity_level`` query values at or above ``threshold``.
 
-    Ordering follows :data:`config.loader.SEVERITY_LEVELS`.
+    Ordering follows :data:`config.policy_parse.SEVERITY_LEVELS`.
     """
     t = threshold.strip().lower()
     if t not in SEVERITY_LEVELS:

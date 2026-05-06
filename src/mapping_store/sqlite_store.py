@@ -6,6 +6,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
 from mapping_store.protocol import MappingRow
 from mapping_store.schema import ISSUE_WORK_ITEM_MAP_TABLE, apply_mapping_schema
 
@@ -27,9 +28,18 @@ def _row_from_row_tuple(t: tuple[object, ...]) -> MappingRow:
         project=str(t[6]),
         work_item_id=str(t[7]),
         work_item_status=str(t[8]),
-        created_at=str(t[9]),
-        updated_at=str(t[10]),
+        snyk_project_name=str(t[9] or ""),
+        snyk_project_origin=str(t[10] or ""),
+        created_at=str(t[11]),
+        updated_at=str(t[12]),
     )
+
+
+_SELECT_COLUMNS = (
+    "group_id, org_id, project_id, issue_id, snyk_status, organization, "
+    "project, work_item_id, work_item_status, snyk_project_name, "
+    "snyk_project_origin, created_at, updated_at"
+)
 
 
 class SqliteMappingStore:
@@ -53,8 +63,7 @@ class SqliteMappingStore:
         issue_id: str,
     ) -> MappingRow | None:
         sql = f"""
-            SELECT group_id, org_id, project_id, issue_id, snyk_status, organization,
-                   project, work_item_id, work_item_status, created_at, updated_at
+            SELECT {_SELECT_COLUMNS}
             FROM {ISSUE_WORK_ITEM_MAP_TABLE}
             WHERE group_id = ? AND org_id = ? AND project_id = ? AND issue_id = ?
         """
@@ -77,19 +86,26 @@ class SqliteMappingStore:
         project: str,
         work_item_id: str,
         work_item_status: str,
+        snyk_project_name: str = "",
+        snyk_project_origin: str = "",
     ) -> MappingRow:
         now = _utc_now_iso_z()
+        pn = str(snyk_project_name or "")
+        po = str(snyk_project_origin or "")
         upsert_sql = f"""
             INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} (
                 group_id, org_id, project_id, issue_id, snyk_status, organization,
-                project, work_item_id, work_item_status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                project, work_item_id, work_item_status, snyk_project_name,
+                snyk_project_origin, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(group_id, org_id, project_id, issue_id) DO UPDATE SET
                 snyk_status = excluded.snyk_status,
                 organization = excluded.organization,
                 project = excluded.project,
                 work_item_id = excluded.work_item_id,
                 work_item_status = excluded.work_item_status,
+                snyk_project_name = excluded.snyk_project_name,
+                snyk_project_origin = excluded.snyk_project_origin,
                 updated_at = excluded.updated_at
         """
         params = (
@@ -102,6 +118,8 @@ class SqliteMappingStore:
             project,
             work_item_id,
             work_item_status,
+            pn,
+            po,
             now,
             now,
         )

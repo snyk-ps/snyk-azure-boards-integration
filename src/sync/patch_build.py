@@ -11,14 +11,31 @@ def _ado_system_description_html(plain: str) -> str:
     Azure Boards ``System.Description`` is HTML; plain ``\\n`` / ``\\n\\n`` often
     collapse in the web UI. Split on blank lines into paragraphs and use
     ``<br />`` for single line breaks.
+
+    A block that starts with ``Open in Snyk`` and a second line with
+    ``https://app.snyk.io/...`` renders the URL as a clickable link.
     """
     if not plain.strip():
         return ""
     blocks = [b.strip() for b in plain.split("\n\n") if b.strip()]
     parts: list[str] = []
     for block in blocks:
-        inner = html.escape(block, quote=False).replace("\n", "<br />")
-        parts.append(f"<p>{inner}</p>")
+        lines = block.split("\n")
+        if (
+            len(lines) >= 2
+            and lines[0].strip() == "Open in Snyk"
+            and lines[1].strip().startswith("https://app.snyk.io/")
+        ):
+            url = lines[1].strip()
+            rest = "\n".join(lines[2:]).strip()
+            href_esc = html.escape(url, quote=True)
+            inner = f'Open in Snyk: <a href="{href_esc}">view in Snyk</a>'
+            if rest:
+                inner += "<br />" + html.escape(rest, quote=False).replace("\n", "<br />")
+            parts.append(f"<p>{inner}</p>")
+        else:
+            inner = html.escape(block, quote=False).replace("\n", "<br />")
+            parts.append(f"<p>{inner}</p>")
     return "".join(parts)
 
 

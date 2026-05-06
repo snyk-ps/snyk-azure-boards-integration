@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Mapping
+from urllib.parse import quote
 
-from config.models import AppConfig, AzureBoardsConfig
+from config.models import REOPEN_POLICY_REOPEN_EXISTING, AppConfig, AzureBoardsConfig
 from integrations.azure_devops.client import WorkItemsClient
+from integrations.azure_devops.errors import AzureDevOpsClientError
 from mapping_store.protocol import MappingRow, MappingStore
 from snyk.client import GroupIssueListParams, IssuesClient
 
@@ -21,6 +23,10 @@ from sync.issue_content import (
     build_system_description,
     effective_target_label_for_title,
     work_item_title,
+)
+from sync.issue_filters import (
+    attrs_indicate_fix_available,
+    issue_passes_sync_from_filter,
 )
 from sync.lifecycle import (
     DERIVED_IGNORED,
@@ -55,12 +61,26 @@ def _natural_key(
     return (group_id.strip(), str(org), str(proj), str(iid))
 
 
+def _ado_work_item_edit_url(
+    *,
+    organization: str,
+    project: str,
+    work_item_id: str,
+) -> str:
+    org_seg = quote(organization.strip(), safe="")
+    proj_seg = quote(project.strip(), safe="")
+    return (
+        f"https://dev.azure.com/{org_seg}/{proj_seg}/_workitems/edit/{work_item_id.strip()}"
+    )
+
+
 def _format_audit_comment(
     *,
     old_status: str,
     new_status: str,
     issue_key: str,
     prior_work_item_id: str | None,
+    prior_work_item_url: str | None = None,
 ) -> str:
     parts = [
         f"Snyk derived status: {old_status} → {new_status}",
@@ -68,10 +88,27 @@ def _format_audit_comment(
     ]
     if prior_work_item_id:
         parts.append(f"Prior work item id={prior_work_item_id}")
+    if prior_work_item_url:
+        parts.append(f"Prior work item={prior_work_item_url}")
     text = "; ".join(parts)
     if len(text) <= _MAX_COMMENT:
         return text
     return text[: _MAX_COMMENT - len(_TRUNC)] + _TRUNC
+
+
+def _fetch_project_metadata(
+    issues_client: IssuesClient,
+    org_id: str,
+    project_id: str,
+    log: logging.Logger,
+) -> tuple[str, str]:
+    """Return ``(name, origin)`` from Snyk Projects API; empty strings on failure."""
+    try:
+        doc = issues_client.get_org_project(org_id, project_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Snyk project metadata fetch failed: %s", exc)
+        return "", ""
+    return str(doc.get("name") or "").strip(), str(doc.get("origin") or "").strip()
 
 
 def run_sync(
@@ -97,26 +134,34 @@ def run_sync(
     validate_sync_config(config)
     ab = config.azure_boards
 
-    levels = effective_severity_levels_from_threshold(config.snyk.severity_threshold)
-    list_params = GroupIssueListParams(effective_severity_levels=levels)
-
     if ab.org_mappings:
         for m in ab.org_mappings:
             boards = boards_for_org_mapping(config, m)
-            template = effective_work_item_template(config, m.overrides)
+            levels = effective_severity_levels_from_threshold(boards.severity_threshold)
+            list_params = GroupIssueListParams(effective_severity_levels=levels)
+            template = effective_work_item_template(config, m.overrides, boards=boards)
             store_gid = config.snyk.group_id.strip() or m.snyk_org_id.strip()
             slug = effective_snyk_org_slug(config, m)
-            issues = list(
+            raw_issues = list(
                 issues_client.iter_org_issues(
                     m.snyk_org_id.strip(),
                     list_params=list_params,
                 ),
             )
+            issues = [
+                r
+                for r in raw_issues
+                if isinstance(r, dict)
+                and issue_passes_sync_from_filter(
+                    r,
+                    issues_sync_from=boards.issues_sync_from,
+                )
+            ]
             _run_sync_batch(
                 issues=issues,
                 group_id_for_store=store_gid,
-                ado_org=m.organization.strip(),
-                ado_proj=m.project.strip(),
+                ado_org=boards.organization.strip(),
+                ado_proj=boards.project.strip(),
                 boards=boards,
                 template=template,
                 wit_client=wit_client,
@@ -133,17 +178,27 @@ def run_sync(
         return 0
 
     group_id = config.snyk.group_id.strip()
-    ado_org = ab.organization.strip()
-    ado_proj = ab.project.strip()
-    template = effective_work_item_template(config, None)
+    boards_flat = ab
+    levels = effective_severity_levels_from_threshold(boards_flat.severity_threshold)
+    list_params = GroupIssueListParams(effective_severity_levels=levels)
+    template = effective_work_item_template(config, None, boards=boards_flat)
     slug = effective_snyk_org_slug(config, None)
-    issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
+    raw_issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
+    issues = [
+        r
+        for r in raw_issues
+        if isinstance(r, dict)
+        and issue_passes_sync_from_filter(
+            r,
+            issues_sync_from=boards_flat.issues_sync_from,
+        )
+    ]
     _run_sync_batch(
         issues=issues,
         group_id_for_store=group_id,
-        ado_org=ado_org,
-        ado_proj=ado_proj,
-        boards=ab,
+        ado_org=boards_flat.organization.strip(),
+        ado_proj=boards_flat.project.strip(),
+        boards=boards_flat,
         template=template,
         wit_client=wit_client,
         store=store,
@@ -270,6 +325,20 @@ def _sync_one_issue(
     sev_raw = attrs.get("effective_severity_level") or rec.get("severity")
     severity = str(sev_raw).strip() if sev_raw is not None else ""
     snyk_pn = str(rec.get("snyk_project_name") or "").strip()
+    stored_name = str(row.snyk_project_name if row else "").strip()
+    stored_origin = str(row.snyk_project_origin if row else "").strip()
+    meta_name, meta_origin = "", ""
+    if use_org_scope_for_detail and snyk_org_id_for_detail and pid:
+        if not stored_name or not stored_origin:
+            meta_name, meta_origin = _fetch_project_metadata(
+                issues_client,
+                snyk_org_id_for_detail,
+                pid,
+                log,
+            )
+    snyk_pn = stored_name or snyk_pn or meta_name
+    snyk_po = stored_origin or meta_origin
+
     target_label = effective_target_label_for_title(
         snyk_project_name=snyk_pn,
         ado_organization=ado_org,
@@ -281,9 +350,8 @@ def _sync_one_issue(
         snyk_org_slug=snyk_org_slug,
         project_id=proj_for_url,
         issue_key=issue_key,
-        ado_organization=ado_org,
-        ado_project=ado_proj,
         snyk_project_name=snyk_pn or None,
+        snyk_project_origin=snyk_po or None,
         severity=severity or None,
     )
 
@@ -302,6 +370,9 @@ def _sync_one_issue(
 
     if row is None:
         if not ab.create_new_work_items:
+            return
+        if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
+            log.debug("sync skip create (no fix available) issue=%s", issue_key)
             return
         patches = build_create_patch(
             title=title,
@@ -327,6 +398,8 @@ def _sync_one_issue(
             project=ado_proj,
             work_item_id=wid,
             work_item_status=wst,
+            snyk_project_name=snyk_pn,
+            snyk_project_origin=snyk_po,
         )
         return
 
@@ -338,6 +411,76 @@ def _sync_one_issue(
                 issue_key,
             )
             return
+
+        if (
+            ab.reopen_work_item_policy == REOPEN_POLICY_REOPEN_EXISTING
+            and prev_wid.strip()
+        ):
+            try:
+                wit_client.get_work_item(ado_org, ado_proj, prev_wid.strip())
+            except AzureDevOpsClientError as exc:
+                if getattr(exc, "status_code", None) != 404:
+                    raise
+                log.info(
+                    "reopen_existing: work item %s missing; creating new issue=%s",
+                    prev_wid,
+                    issue_key,
+                )
+            else:
+                if ab.create_only_when_fix_available and not attrs_indicate_fix_available(
+                    attrs,
+                ):
+                    log.debug(
+                        "sync skip reopen transition (no fix available) issue=%s",
+                        issue_key,
+                    )
+                    return
+                target_state = ab.work_item_state_active
+                patches = build_update_patch(
+                    title=title,
+                    description=description,
+                    state=target_state,
+                    template=template,
+                )
+                updated = wit_client.update_work_item(
+                    ado_org,
+                    ado_proj,
+                    prev_wid.strip(),
+                    patches,
+                )
+                wst = str(updated.get("work_item_status") or "")
+                store.upsert(
+                    group_id=gid,
+                    org_id=oid,
+                    project_id=pid,
+                    issue_id=iid,
+                    snyk_status=new_status,
+                    organization=ado_org,
+                    project=ado_proj,
+                    work_item_id=prev_wid.strip(),
+                    work_item_status=wst,
+                    snyk_project_name=snyk_pn,
+                    snyk_project_origin=snyk_po,
+                )
+                if prev_snyk is not None and prev_snyk != new_status:
+                    text = _format_audit_comment(
+                        old_status=prev_snyk,
+                        new_status=new_status,
+                        issue_key=issue_key,
+                        prior_work_item_id=None,
+                    )
+                    wit_client.add_work_item_comment(
+                        ado_org,
+                        ado_proj,
+                        prev_wid.strip(),
+                        text,
+                    )
+                return
+
+        if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
+            log.debug("sync skip reopen create (no fix available) issue=%s", issue_key)
+            return
+
         patches = build_create_patch(
             title=title,
             description=description,
@@ -352,6 +495,15 @@ def _sync_one_issue(
         )
         new_wid = str(created.get("work_item_id", ""))
         wst = str(created.get("work_item_status") or "")
+        prior_url = (
+            _ado_work_item_edit_url(
+                organization=ado_org,
+                project=ado_proj,
+                work_item_id=prev_wid,
+            )
+            if prev_wid.strip()
+            else None
+        )
         store.upsert(
             group_id=gid,
             org_id=oid,
@@ -362,6 +514,8 @@ def _sync_one_issue(
             project=ado_proj,
             work_item_id=new_wid,
             work_item_status=wst,
+            snyk_project_name=snyk_pn,
+            snyk_project_origin=snyk_po,
         )
         if prev_snyk is not None and prev_snyk != new_status:
             text = _format_audit_comment(
@@ -369,6 +523,7 @@ def _sync_one_issue(
                 new_status=new_status,
                 issue_key=issue_key,
                 prior_work_item_id=prev_wid or None,
+                prior_work_item_url=prior_url,
             )
             wit_client.add_work_item_comment(ado_org, ado_proj, new_wid, text)
         return
@@ -411,6 +566,8 @@ def _sync_one_issue(
         project=ado_proj,
         work_item_id=wid,
         work_item_status=wst,
+        snyk_project_name=snyk_pn,
+        snyk_project_origin=snyk_po,
     )
 
     if prev_snyk is not None and prev_snyk != new_status:

@@ -146,12 +146,9 @@ def test_build_system_description_includes_narrative_and_link() -> None:
         snyk_org_slug="acme",
         project_id="proj-uuid",
         issue_key="SNYK-JS-VM2-5415299",
-        ado_organization="my-ado-org",
-        ado_project="my-ado-proj",
         snyk_project_name="my-snyk-repo",
         severity="critical",
     )
-    assert "Azure Boards target: my-ado-org / my-ado-proj" in text
     assert "Snyk target: my-snyk-repo" in text
     assert "Severity: critical" in text
     assert "\n\n" in text

@@ -3,13 +3,19 @@
 # stay in environment variables or Key Vault — never put them in this file.
 
 azure_boards:
-  create_new_work_items: true
-  organization: "your-azure-devops-org"
-  project: "your-azure-devops-project"
-  # For canonical app.snyk.io links in work items, use org_mappings below with snyk_org_slug per row.
-  # Group-scoped sync (this layout) does not configure an org slug; links may be incomplete until then.
-  # Work item type and Boards states must exist for your process (Agile Task vs CMMI, etc.).
   defaults:
+    # Routing for group-scoped sync (when org_mappings is absent): ADO org/project names.
+    organization: "your-azure-devops-org"
+    project: "your-azure-devops-project"
+    create_new_work_items: true
+    # Minimum severity for listing issues (Snyk Issues API effective_severity_level).
+    severity_threshold: high
+    # historical | <ISO-8601 timestamp> — limit which issues are considered for sync.
+    issues_sync_from: historical
+    # When true, only create work items when the issue indicates a fix is available.
+    create_only_when_fix_available: false
+    # new_work_item | reopen_existing — behavior when a mapped work item is missing in ADO.
+    reopen_work_item_policy: new_work_item
     work_item_type: Task
     work_item_state_active: New
     work_item_state_closed: Closed
@@ -17,6 +23,10 @@ azure_boards:
       tags:
         - Snyk
       # json_patch: []
+
+  # For canonical app.snyk.io links in work items, use org_mappings below with snyk_org_slug per row.
+  # Group-scoped sync (this layout) does not configure an org slug; links may be incomplete until then.
+  # Work item type and Boards states must exist for your process (Agile Task vs CMMI, etc.).
 
   # Multi-target sync (optional): each row maps one ADO org/project to one Snyk org UUID.
   # Uncomment and edit when using org-scoped issue listing instead of a single group_id scope.
@@ -26,13 +36,13 @@ azure_boards:
   #     snyk_org_id: "00000000-0000-0000-0000-000000000002"
   #     snyk_org_slug: "your-snyk-org-slug"
   #     overrides:
+  #       severity_threshold: critical
   #       work_item_type: Task
   #       # work_item_template:
   #       #   tags: ["TeamA"]
 
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"
-  severity_threshold: high
 
 # Local mapping DB for dev/tests (non-secret). Do not put tokens or PATs in this path.
 mapping_store: sqlite

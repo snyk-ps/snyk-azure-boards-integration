@@ -32,7 +32,10 @@ def test_run_smoke_missing_org_project(
 ) -> None:
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
     cfg = tmp_path / "c.yaml"
-    cfg.write_text("azure_boards:\n  create_new_work_items: true\n", encoding="utf-8")
+    cfg.write_text(
+        "azure_boards:\n  defaults:\n    create_new_work_items: true\n",
+        encoding="utf-8",
+    )
     p = build_parser()
     args = p.parse_args(
         ["azure-devops-smoke", "--config", str(cfg), "--work-item-id", "1"],
@@ -45,7 +48,7 @@ def test_run_smoke_missing_pat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.delenv("AZURE_DEVOPS_PAT", raising=False)
     cfg = tmp_path / "c.yaml"
     cfg.write_text(
-        "azure_boards:\n  organization: org\n  project: proj\n",
+        "azure_boards:\n  defaults:\n    organization: org\n    project: proj\n",
         encoding="utf-8",
     )
     p = build_parser()
@@ -60,7 +63,7 @@ def test_run_smoke_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat")
     cfg = tmp_path / "c.yaml"
     cfg.write_text(
-        "azure_boards:\n  organization: org\n  project: proj\n",
+        "azure_boards:\n  defaults:\n    organization: org\n    project: proj\n",
         encoding="utf-8",
     )
 

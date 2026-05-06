@@ -19,6 +19,8 @@ class MappingRow:
     project: str
     work_item_id: str
     work_item_status: str
+    snyk_project_name: str
+    snyk_project_origin: str
     created_at: str
     updated_at: str
 
@@ -50,6 +52,8 @@ class MappingStore(Protocol):
         project: str,
         work_item_id: str,
         work_item_status: str,
+        snyk_project_name: str = "",
+        snyk_project_origin: str = "",
     ) -> MappingRow:
         """Insert or update by natural key; set ``created_at`` / ``updated_at`` in UTC ISO 8601 Z."""
         ...

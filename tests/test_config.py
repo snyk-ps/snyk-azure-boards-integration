@@ -32,10 +32,10 @@ def test_load_yaml_file_rejects_null_byte() -> None:
 
 def test_load_app_config_defaults_no_file() -> None:
     c = load_app_config(config_path=None, cli_group_id=None)
-    assert c.azure_boards.create_new_work_items is True
+    assert c.azure_boards.defaults.create_new_work_items is True
     assert c.azure_boards.organization == ""
     assert c.azure_boards.project == ""
-    assert c.snyk.severity_threshold == "high"
+    assert c.azure_boards.defaults.severity_threshold == "high"
     assert c.snyk.group_id == ""
     assert c.work_item_template == {}
 
@@ -44,16 +44,17 @@ def test_load_app_config_from_yaml_file(tmp_path: Path) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(
         "azure_boards:\n"
-        "  organization: my-ado-org\n"
-        "  project: my-ado-proj\n"
+        "  defaults:\n"
+        "    organization: my-ado-org\n"
+        "    project: my-ado-proj\n"
+        "    severity_threshold: critical\n"
         "snyk:\n"
-        "  group_id: g-from-file\n"
-        "  severity_threshold: critical\n",
+        "  group_id: g-from-file\n",
         encoding="utf-8",
     )
     c = load_app_config(config_path=str(p), cli_group_id=None)
     assert c.snyk.group_id == "g-from-file"
-    assert c.snyk.severity_threshold == "critical"
+    assert c.azure_boards.defaults.severity_threshold == "critical"
     assert c.azure_boards.organization == "my-ado-org"
     assert c.azure_boards.project == "my-ado-proj"
 
@@ -62,8 +63,9 @@ def test_load_app_config_rejects_snyk_org_slug_under_azure_boards(tmp_path: Path
     p = tmp_path / "c.yaml"
     p.write_text(
         "azure_boards:\n"
-        "  organization: o\n"
-        "  project: p\n"
+        "  defaults:\n"
+        "    organization: o\n"
+        "    project: p\n"
         "  snyk_org_slug: bad\n"
         "snyk:\n"
         "  group_id: g\n",
@@ -140,8 +142,26 @@ def test_snyk_extra_keys_preserved(tmp_path: Path) -> None:
 
 def test_invalid_severity_in_yaml(tmp_path: Path) -> None:
     p = tmp_path / "c.yaml"
-    p.write_text("snyk:\n  group_id: g\n  severity_threshold: bogus\n", encoding="utf-8")
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    severity_threshold: bogus\n"
+        "snyk:\n  group_id: g\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ConfigError, match="severity_threshold"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_rejects_snyk_severity_threshold(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "snyk:\n"
+        "  group_id: g\n"
+        "  severity_threshold: high\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="snyk.severity_threshold"):
         load_app_config(config_path=str(p), cli_group_id=None)
 
 
@@ -150,7 +170,7 @@ def test_azure_boards_create_new_from_env(
 ) -> None:
     monkeypatch.setenv("AZURE_BOARDS_CREATE_NEW_WORK_ITEMS", "false")
     c = load_app_config(config_path=None, cli_group_id=None)
-    assert c.azure_boards.create_new_work_items is False
+    assert c.azure_boards.defaults.create_new_work_items is False
 
 
 def test_load_app_config_config_path_env_precedence(
@@ -231,7 +251,10 @@ def test_invalid_mapping_store_in_yaml(tmp_path: Path) -> None:
 def test_azure_boards_org_project_from_yaml(tmp_path: Path) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(
-        "azure_boards:\n  organization: my-org\n  project: my-proj\n",
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    organization: my-org\n"
+        "    project: my-proj\n",
         encoding="utf-8",
     )
     c = load_app_config(config_path=str(p), cli_group_id=None)
@@ -245,7 +268,10 @@ def test_azure_boards_org_project_env_overrides_yaml(
 ) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(
-        "azure_boards:\n  organization: from-yaml\n  project: from-yaml-p\n",
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    organization: from-yaml\n"
+        "    project: from-yaml-p\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("AZURE_BOARDS_ORGANIZATION", "from-env")
@@ -265,6 +291,19 @@ def test_rejects_flat_work_item_keys_under_azure_boards(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="not supported"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_rejects_legacy_flat_organization_under_azure_boards(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  organization: bad\n"
+        "  defaults:\n"
+        "    organization: good\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="azure_boards.organization"):
         load_app_config(config_path=str(p), cli_group_id=None)
 
 

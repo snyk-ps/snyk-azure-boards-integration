@@ -217,15 +217,31 @@ Top-level keys:
 
 | Key | Purpose |
 | --- | --- |
-| `azure_boards` | Azure Boards behavior: `create_new_work_items` (boolean, default `true`) — global enable/disable for **new** work items (**P2-FR-11**). Routing: `organization` and `project` (non-secret; required when `org_mappings` is absent). **`defaults`** holds `work_item_type` (`Task`), `work_item_state_active` (`New`), `work_item_state_closed` (`Closed`), and optional nested `work_item_template` (do not set `work_item_*` at the `azure_boards` root — the loader rejects that). **`org_mappings`** is an optional list of `{ organization, project, snyk_org_id, snyk_org_slug, overrides? }` for multi-target sync; each row **`snyk_org_slug`** identifies that Snyk org in **`app.snyk.io`** URLs (**required** per row). Group-scoped sync without **`org_mappings`** does not configure an org slug (work-item links may be incomplete). Optional **`overrides`** partially replace **`defaults`**. |
+| `azure_boards` | **`defaults`** holds routing (`organization`, `project`), **`create_new_work_items`** (boolean, default `true` — **P2-FR-11**), **`severity_threshold`** (`low` \| `medium` \| `high` \| `critical`), **`issues_sync_from`** (`historical` or an ISO-8601 timestamp), **`create_only_when_fix_available`**, **`reopen_work_item_policy`** (`new_work_item` \| `reopen_existing`), **`work_item_type`**, **`work_item_state_*`**, and optional **`work_item_template`**. Do **not** set routing, severity, or `work_item_*` keys as direct children of **`azure_boards`** — the loader rejects legacy flat keys. **`org_mappings`** is an optional list of `{ organization, project, snyk_org_id, snyk_org_slug, overrides? }` for multi-target sync; each row **`snyk_org_slug`** identifies that Snyk org in **`app.snyk.io`** URLs (**required** per row). Optional **`overrides`** partially replace **`defaults`**. After load, merged values are also available on **`azure_boards`** top-level fields for convenience in code paths that expect a flat view. |
 | `work_item_template` | Optional `tags` (list of strings) and `json_patch` (JSON Patch ops) applied on **`sync`** create/update; may be `{}`. Merged with `azure_boards.defaults.work_item_template`, then per-mapping `overrides.work_item_template` (`json_patch` lists concatenate in that order). Assignee: use `json_patch` with path `/fields/System.AssignedTo` (Azure DevOps identity format). |
-| `snyk` | `group_id` (string; required for group-scoped **`fetch`** / **`sync`** unless **`azure_boards.org_mappings`** defines at least one mapping), `severity_threshold` (`low` \| `medium` \| `high` \| `critical`, default `high`). Do **not** put **`snyk_org_slug`** here — use **`azure_boards.org_mappings[].snyk_org_slug`** only. |
+| `snyk` | `group_id` (string; required for group-scoped **`fetch`** / **`sync`** unless **`azure_boards.org_mappings`** defines at least one mapping). **`snyk.severity_threshold` is not supported** — use **`azure_boards.defaults.severity_threshold`**. Do **not** put **`snyk_org_slug`** here — use **`azure_boards.org_mappings[].snyk_org_slug`** only. |
 | `mapping_store` | Where Snyk↔work-item mappings are persisted: `sqlite` (local dev/tests) or reserved `azure_table` (production-style; not implemented in this repo yet). Default: `sqlite`. |
 | `sqlite_path` | Filesystem path to the SQLite file when `mapping_store` is `sqlite`. Default: `data/mapping_store.sqlite`. **Do not put secrets** (tokens, PATs) in this path or database file — use environment / Key Vault only. |
 
 Sections may be omitted where **defaults** apply; a full example is in **`data/sample-config.yaml`** (tracked in git).
 
-**Local SQLite schema (optional):** from the repository root, run `uv run python scripts/init_mapping_store.py --config data/sample-config.yaml` (or pass `--mapping-store-sqlite-path /path/to/file.sqlite`). The script is idempotent and uses the same `sqlite_path` resolution as the app (**defaults → YAML → env → CLI**).
+**Local SQLite schema (optional):** from the repository root, run `uv run python scripts/init_mapping_store.py --config data/sample-config.yaml` (or pass `--mapping-store-sqlite-path /path/to/file.sqlite`). The script is idempotent and uses the same `sqlite_path` resolution as the app (**defaults → YAML → env → CLI**). The mapping table **`issue_work_item_map`** ties each Snyk issue to Azure Boards state; all columns below exist in the schema (text fields may be empty until **`sync`** fills them).
+
+| Column | Meaning |
+| ------ | ------- |
+| `group_id` | Storage namespace (Snyk group id or org id used for this row). |
+| `org_id` | Snyk organization id for the issue. |
+| `project_id` | Snyk project id for the issue. |
+| `issue_id` | Snyk issue id (natural key with the three ids above). |
+| `snyk_status` | Last-seen derived Snyk status stored for the mapping. |
+| `organization` | Azure DevOps organization for the work item. |
+| `project` | Azure DevOps project for the work item. |
+| `work_item_id` | Azure Boards work item id. |
+| `work_item_status` | Last-seen work item status snapshot. |
+| `snyk_project_name` | Snyk project display name (filled when **`sync`** resolves project metadata). |
+| `snyk_project_origin` | Snyk project origin URL (filled when **`sync`** resolves project metadata). |
+| `created_at` | UTC timestamp when the mapping row was created. |
+| `updated_at` | UTC timestamp when the mapping row was last updated. |
 
 ### Environment variables
 
@@ -233,9 +249,9 @@ Sections may be omitted where **defaults** apply; a full example is in **`data/s
 | -------- | ---- |
 | `SNYK_APP_CONFIG` | Path to the YAML file if you do not pass `--config` (CLI `--config` wins when both are set). |
 | `SNYK_GROUP_ID` | Overrides `snyk.group_id` from the file (CLI group arguments override this in turn). |
-| `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.create_new_work_items` (`true` / `false` / `1` / `0`). |
-| `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
-| `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
+| `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.defaults.create_new_work_items` (`true` / `false` / `1` / `0`). |
+| `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.defaults.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
+| `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.defaults.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
 | `AZURE_DEVOPS_PAT` | **Secret:** Azure DevOps personal access token (not read from YAML or CLI flags). |
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
@@ -266,11 +282,11 @@ Official documentation: [Use personal access tokens to authenticate](https://lea
 
 ### The `sync` command
 
-The **`sync`** command runs one reconciliation pass: it lists issues from the Snyk Issues API using **`snyk.group_id`** (**group** scope) when **`azure_boards.org_mappings`** is absent or empty; when **`org_mappings`** is non-empty, it lists issues per configured **`snyk_org_id`** (**org** scope) and routes Azure DevOps calls to each row’s **`organization`** / **`project`** with **`defaults`** merged with that row’s **`overrides`**. It reads or writes rows in the **mapping store** and creates, updates, or closes Azure Boards work items via **`AZURE_DEVOPS_PAT`** (create/update/comment scope).
+The **`sync`** command runs one reconciliation pass: it lists issues from the Snyk Issues API using **`snyk.group_id`** (**group** scope) when **`azure_boards.org_mappings`** is absent or empty; when **`org_mappings`** is non-empty, it lists issues per configured **`snyk_org_id`** (**org** scope) and routes Azure DevOps calls to each row’s **`organization`** / **`project`** with **`defaults`** merged with that row’s **`overrides`**. List calls use **`effective_severity_level`** derived from **`azure_boards.defaults.severity_threshold`** (comma-separated levels in the query string). It reads or writes rows in the **mapping store** and creates, updates, or closes Azure Boards work items via **`AZURE_DEVOPS_PAT`** (create/update/comment scope).
 
-**Secrets** (`SNYK_TOKEN`, `AZURE_DEVOPS_PAT`) must be set in the environment — not in YAML. After merge, **`sync`** requires non-empty **`azure_boards.work_item_type`**, **`work_item_state_active`**, and **`work_item_state_closed`** (defaults apply when omitted). When **`org_mappings`** is **not** used, **`sync`** also requires a non-empty **`snyk.group_id`**, **`azure_boards.organization`**, and **`azure_boards.project`**. When **`org_mappings`** **is** used, **`snyk.group_id`** is optional for listing (mapping rows may use **`snyk_org_id`** as the storage namespace when **`group_id`** is unset); each row **must** include **`snyk_org_slug`** (non-empty) so work items get valid Snyk UI links.
+**Secrets** (`SNYK_TOKEN`, `AZURE_DEVOPS_PAT`) must be set in the environment — not in YAML. After merge, **`sync`** requires non-empty **`azure_boards.defaults.work_item_type`** (mirrored on **`azure_boards.work_item_type`**), **`work_item_state_active`**, and **`work_item_state_closed`** (defaults apply when omitted). When **`org_mappings`** is **not** used, **`sync`** also requires a non-empty **`snyk.group_id`**, **`azure_boards.defaults.organization`**, and **`azure_boards.defaults.project`** (effective values are mirrored on **`azure_boards.organization`** / **`project`**). When **`org_mappings`** **is** used, **`snyk.group_id`** is optional for listing (mapping rows may use **`snyk_org_id`** as the storage namespace when **`group_id`** is unset); each row **must** include **`snyk_org_slug`** (non-empty) so work items get valid Snyk UI links.
 
-When **`azure_boards.create_new_work_items`** is **`false`**, **`sync`** does **not** create new work items or insert new mapping rows; it still updates or closes work items that already have a mapping.
+When **`azure_boards.defaults.create_new_work_items`** is **`false`** (mirrored on **`azure_boards.create_new_work_items`**), **`sync`** does **not** create new work items or insert new mapping rows; it still updates or closes work items that already have a mapping.
 
 ```bash
 export SNYK_TOKEN="***"
@@ -282,7 +298,7 @@ Use **`--group-id`** to override `snyk.group_id` for one invocation. **`--mappin
 
 ### `azure-devops-smoke` command
 
-The **`azure-devops-smoke`** command performs a **single read-only** `get_work_item` call to validate connectivity, authentication, and response parsing. It reads **`azure_boards.organization`** and **`azure_boards.project`** from merged configuration (YAML and/or `AZURE_BOARDS_ORGANIZATION` / `AZURE_BOARDS_PROJECT`) and requires **`AZURE_DEVOPS_PAT`** in the environment (**do not** pass the PAT on the command line).
+The **`azure-devops-smoke`** command performs a **single read-only** `get_work_item` call to validate connectivity, authentication, and response parsing. It reads **`azure_boards.defaults.organization`** and **`azure_boards.defaults.project`** from merged configuration (YAML and/or `AZURE_BOARDS_ORGANIZATION` / `AZURE_BOARDS_PROJECT`) and requires **`AZURE_DEVOPS_PAT`** in the environment (**do not** pass the PAT on the command line).
 
 Example:
 
@@ -308,17 +324,20 @@ If both group id and **`--org-id`** are missing after merge, **`fetch`** exits w
 
 | Setting | Default | Notes |
 | ------- | ------- | ----- |
-| `azure_boards.create_new_work_items` | `true` | When `false`, **`sync`** must not create **new** work items or mapping rows (**P2-FR-11**); it may still update/close mapped items. |
-| `azure_boards.organization` | `""` | Azure DevOps organization name for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`** and for **`sync`** when **`org_mappings`** is not used. |
-| `azure_boards.project` | `""` | Azure DevOps project name or id for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`** and for **`sync`** when **`org_mappings`** is not used. |
-| `azure_boards.defaults` | (see nested keys) | Set **`work_item_type`**, **`work_item_state_*`**, and optional **`work_item_template`** here only — not as direct children of **`azure_boards`**. |
+| `azure_boards.defaults.create_new_work_items` | `true` | When `false`, **`sync`** must not create **new** work items or mapping rows (**P2-FR-11**); it may still update/close mapped items. |
+| `azure_boards.defaults.organization` | `""` | Azure DevOps organization name for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`** and for **`sync`** when **`org_mappings`** is not used. |
+| `azure_boards.defaults.project` | `""` | Azure DevOps project name or id for REST paths (non-secret). Required (non-empty) for **`azure-devops-smoke`** and for **`sync`** when **`org_mappings`** is not used. |
+| `azure_boards.defaults.severity_threshold` | `high` | Minimum severity for issue listing; **`fetch`** / **`sync`** map this to Snyk **`effective_severity_level`** (comma-separated). Not valid under **`snyk`**. |
+| `azure_boards.defaults.issues_sync_from` | `historical` | `historical` or an ISO-8601 timestamp — controls which issues are in scope for sync (see design docs). |
+| `azure_boards.defaults.create_only_when_fix_available` | `false` | When `true`, skip creating work items unless the issue indicates a fix is available. |
+| `azure_boards.defaults.reopen_work_item_policy` | `new_work_item` | `new_work_item` or `reopen_existing` when a mapped work item is missing in ADO. |
+| `azure_boards.defaults` | (nested) | Also holds **`work_item_type`**, **`work_item_state_*`**, and **`work_item_template`** — do not set **`work_item_*`** as direct children of **`azure_boards`**. |
 | `azure_boards.org_mappings` | `[]` | Optional list of **`organization`**, **`project`**, **`snyk_org_id`**, **`snyk_org_slug`** (required per row), **`overrides`** for multi-target **`sync`**. |
 | `azure_boards.defaults.work_item_type` | `Task` | WIT name for **`sync`** create (`$type`); must exist in your process. |
 | `azure_boards.defaults.work_item_state_active` | `New` | Boards **`System.State`** for active findings; must exist in your process. |
 | `azure_boards.defaults.work_item_state_closed` | `Closed` | Boards **`System.State`** when **`sync`** closes on resolved/ignored. |
 | `work_item_template` | `{}` | Optional **`tags`** and **`json_patch`** for **`sync`** (see **`data/sample-config.yaml`**). |
 | `snyk.group_id` | `""` | **Required** for group-scoped **`fetch`** / **`sync`** when **`org_mappings`** is empty — use a real Snyk group UUID. Optional when **`org_mappings`** drives **`sync`**. |
-| `snyk.severity_threshold` | `high` | Minimum severity for policy; aligns with **P2-FR-1** when set to `high` or `critical`. |
 | `mapping_store` | `sqlite` | Use `sqlite` for local mapping persistence. `azure_table` is reserved; selecting it without a working adapter causes a clear error (no silent fallback to SQLite). |
 | `sqlite_path` | `data/mapping_store.sqlite` | SQLite file path for mappings (non-secret). Do not store tokens or PATs here. |
 
@@ -326,10 +345,14 @@ Example file (see also **`data/sample-config.yaml`**):
 
 ```yaml
 azure_boards:
-  create_new_work_items: true
-  organization: "your-azure-devops-org"
-  project: "your-azure-devops-project"
   defaults:
+    organization: "your-azure-devops-org"
+    project: "your-azure-devops-project"
+    create_new_work_items: true
+    severity_threshold: high
+    issues_sync_from: historical
+    create_only_when_fix_available: false
+    reopen_work_item_policy: new_work_item
     work_item_type: Task
     work_item_state_active: New
     work_item_state_closed: Closed
@@ -338,7 +361,6 @@ azure_boards:
         - Snyk
 snyk:
   group_id: "00000000-0000-0000-0000-000000000001"
-  severity_threshold: high
 mapping_store: sqlite
 sqlite_path: data/mapping_store.sqlite
 ```

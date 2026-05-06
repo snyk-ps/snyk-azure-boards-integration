@@ -30,6 +30,7 @@ def test_boards_for_org_mapping_applies_overrides() -> None:
         organization="o",
         project="p",
         snyk_org_id="s",
+        snyk_org_slug="slug",
         overrides={"work_item_type": "Bug"},
     )
     b = boards_for_org_mapping(app, m)
@@ -61,18 +62,50 @@ def test_effective_snyk_org_slug_group_mode_empty() -> None:
     assert effective_snyk_org_slug(app, None) == ""
 
 
-def test_effective_work_item_template_merge() -> None:
+def test_org_mapping_override_template_not_baked_into_defaults() -> None:
+    """Row work_item_template must merge once in effective_work_item_template only."""
     app = AppConfig(
         azure_boards=AzureBoardsConfig(
             defaults=AzureBoardsDefaults(
-                work_item_template={"tags": ["default-tag"]},
+                work_item_template={"tags": ["Snyk"], "json_patch": []},
             ),
         ),
+        work_item_template={},
+        snyk=SnykConfig(),
+    )
+    patch_op = {
+        "op": "add",
+        "path": "/fields/System.AssignedTo",
+        "value": "user@example.com",
+    }
+    m = OrgMapping(
+        organization="o",
+        project="p",
+        snyk_org_id="oid",
+        snyk_org_slug="slug",
+        overrides={"work_item_template": {"json_patch": [patch_op]}},
+    )
+    boards = boards_for_org_mapping(app, m)
+    assert boards.defaults.work_item_template == app.azure_boards.defaults.work_item_template
+
+    merged = effective_work_item_template(app, m.overrides, boards=boards)
+    assert merged["json_patch"] == [patch_op]
+
+
+def test_effective_work_item_template_merge() -> None:
+    boards = AzureBoardsConfig(
+        defaults=AzureBoardsDefaults(
+            work_item_template={"tags": ["default-tag"]},
+        ),
+    )
+    app = AppConfig(
+        azure_boards=boards,
         work_item_template={"tags": ["global"]},
         snyk=SnykConfig(),
     )
     out = effective_work_item_template(
         app,
         {"work_item_template": {"tags": ["row"]}},
+        boards=boards,
     )
     assert out["tags"] == ["global", "default-tag", "row"]

@@ -111,8 +111,7 @@ def test_iter_group_issues_two_pages_follows_links_next() -> None:
             assert f"/groups/{gid}/issues" in req.full_url
             assert f"version={SNYK_REST_API_VERSION}" in req.full_url
             assert "limit=100" in req.full_url
-            assert "effective_severity_level=high" in req.full_url
-            assert "effective_severity_level=critical" in req.full_url
+            assert "effective_severity_level=high%2Ccritical" in req.full_url
             return _FakeResp(
                 _page_json(
                     data=[_issue_resource("a")],

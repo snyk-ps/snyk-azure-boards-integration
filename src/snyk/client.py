@@ -50,7 +50,8 @@ class GroupIssueListParams:
     ``effective_severity_levels``:
         ``None`` — use :data:`DEFAULT_EFFECTIVE_SEVERITY_LEVELS` (high, critical).
         Empty tuple — omit severity query parameters (no filter).
-        Non-empty — one ``effective_severity_level`` query parameter per value.
+        Non-empty — comma-separated ``effective_severity_level`` query value
+        (e.g. ``high,critical``), matching Snyk list ``links`` pagination.
     """
 
     effective_severity_levels: tuple[str, ...] | None = None
@@ -213,8 +214,8 @@ class IssuesClient:
             levels = DEFAULT_EFFECTIVE_SEVERITY_LEVELS
         else:
             levels = p.effective_severity_levels
-        for lvl in levels:
-            q.append(("effective_severity_level", lvl))
+        if levels:
+            q.append(("effective_severity_level", ",".join(levels)))
         if p.issue_type is not None:
             q.append(("type", p.issue_type))
         if p.status is not None:
@@ -271,6 +272,21 @@ class IssuesClient:
         raw = parse_single_issue_document(doc)
         idx = included_index_from_document(doc)
         return normalized_issue_record(raw, included_index=idx)
+
+    def get_org_project(self, org_id: str, project_id: str) -> dict[str, Any]:
+        """Fetch Snyk project metadata (``GET /orgs/{org_id}/projects/{project_id}``)."""
+        q = urlencode([("version", SNYK_REST_API_VERSION)])
+        url = f"{self._base_url}/orgs/{org_id}/projects/{project_id}?{q}"
+        doc = self._get_json(url)
+        data = doc.get("data")
+        if not isinstance(data, dict):
+            return {"name": "", "origin": ""}
+        attrs = data.get("attributes")
+        if not isinstance(attrs, dict):
+            return {"name": "", "origin": ""}
+        name = str(attrs.get("name") or "").strip()
+        origin = str(attrs.get("origin") or "").strip()
+        return {"name": name, "origin": origin}
 
 
 def _yield_normalized_issues(page: IssuesListPage) -> Iterator[dict[str, Any]]:

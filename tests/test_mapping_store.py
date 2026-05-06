@@ -123,16 +123,18 @@ def test_plain_insert_duplicate_natural_key_raises(tmp_path: Path) -> None:
         conn.execute(
             f"INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} "
             "(group_id, org_id, project_id, issue_id, snyk_status, organization, "
-            "project, work_item_id, work_item_status, created_at, updated_at) "
-            "VALUES ('g','o','p','i','open','a','b','1','New','t1','t1')",
+            "project, work_item_id, work_item_status, snyk_project_name, "
+            "snyk_project_origin, created_at, updated_at) "
+            "VALUES ('g','o','p','i','open','a','b','1','New','','','t1','t1')",
         )
         conn.commit()
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 f"INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} "
                 "(group_id, org_id, project_id, issue_id, snyk_status, organization, "
-                "project, work_item_id, work_item_status, created_at, updated_at) "
-                "VALUES ('g','o','p','i','open','a','b','2','New','t2','t2')",
+                "project, work_item_id, work_item_status, snyk_project_name, "
+                "snyk_project_origin, created_at, updated_at) "
+                "VALUES ('g','o','p','i','open','a','b','2','New','','','t2','t2')",
             )
             conn.commit()
     finally:
@@ -201,6 +203,8 @@ def test_ddl_source_contains_expected_columns() -> None:
         "ISSUE_ID",
         "SNYK_STATUS",
         "WORK_ITEM_STATUS",
+        "SNYK_PROJECT_NAME",
+        "SNYK_PROJECT_ORIGIN",
         "CREATED_AT",
         "UPDATED_AT",
     ):

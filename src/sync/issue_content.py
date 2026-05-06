@@ -84,7 +84,7 @@ def work_item_title(
     ``System.Title``: ``<target> - <issue>`` when a target label is known.
 
     ``target_name`` should match :func:`effective_target_label_for_title` so the
-    title aligns with **Azure Boards target** / **Snyk target** in the description.
+    title aligns with **Snyk target** context in the description when present.
 
     ``issue`` is the Snyk ``attributes.title``; if missing, falls back to the
     primary ``package@version`` line. Without ``target_name``, only the issue part
@@ -317,6 +317,53 @@ def remedy_section_lines(attrs: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def code_location_lines(attrs: Mapping[str, Any]) -> list[str]:
+    """
+    File path and line range from Snyk Code ``coordinates[].representations[]``.
+
+    Uses ``sourceLocation.file`` and ``region.start`` / ``region.end`` line numbers
+    when present (see ``data/sample_coord.local.json``).
+    """
+    coords = attrs.get("coordinates")
+    if not isinstance(coords, list):
+        return []
+    out: list[str] = []
+    for coord in coords:
+        if not isinstance(coord, dict):
+            continue
+        reps = coord.get("representations")
+        if not isinstance(reps, list):
+            continue
+        for rep in reps:
+            if not isinstance(rep, dict):
+                continue
+            sl = rep.get("sourceLocation")
+            if not isinstance(sl, dict):
+                continue
+            fp = sl.get("file")
+            if not isinstance(fp, str) or not fp.strip():
+                continue
+            region = sl.get("region")
+            if isinstance(region, dict):
+                start = region.get("start")
+                end = region.get("end")
+                sln = (
+                    start.get("line")
+                    if isinstance(start, dict)
+                    else None
+                )
+                eln = (
+                    end.get("line")
+                    if isinstance(end, dict)
+                    else None
+                )
+                if sln is not None and eln is not None:
+                    out.append(f"{fp.strip()} (lines {sln}-{eln})")
+                    continue
+            out.append(fp.strip())
+    return out
+
+
 def coordinate_path_hints(attrs: Mapping[str, Any]) -> list[str]:
     """Best-effort lockfile / manifest paths from ``coordinates[]`` (developer context)."""
     coords = attrs.get("coordinates")
@@ -395,9 +442,8 @@ def build_system_description(
     snyk_org_slug: str,
     project_id: str,
     issue_key: str,
-    ado_organization: str = "",
-    ado_project: str = "",
     snyk_project_name: str | None = None,
+    snyk_project_origin: str | None = None,
     severity: str | None = None,
 ) -> str:
     """Multi-line plain text for ``System.Description``."""
@@ -410,29 +456,22 @@ def build_system_description(
     cves = cve_entries(attrs)
     flags = fix_signal_labels(attrs)
     path_hints = coordinate_path_hints(attrs)
+    code_locs = code_location_lines(attrs)
     link = snyk_ui_issue_url(
         snyk_org_slug=snyk_org_slug,
         project_id=project_id,
         issue_key=issue_key,
     )
 
-    ado_org = str(ado_organization or "").strip()
-    ado_proj = str(ado_project or "").strip()
     sev = str(severity or "").strip()
     target_name = str(snyk_project_name or "").strip()
+    origin = str(snyk_project_origin or "").strip()
 
     context_blocks: list[list[str]] = []
-    if ado_org and ado_proj:
-        context_blocks.append([f"Azure Boards target: {ado_org} / {ado_proj}"])
-    elif ado_org or ado_proj:
-        context_blocks.append(
-            [
-                "Azure Boards target: "
-                f"{ado_org or '(unset)'} / {ado_proj or '(unset)'}",
-            ],
-        )
     if target_name:
         context_blocks.append([f"Snyk target: {target_name}"])
+    if origin:
+        context_blocks.append([f"Snyk project origin: {origin}"])
     meta_lines: list[str] = []
     if sev:
         meta_lines.append(f"Severity: {sev}")
@@ -446,6 +485,11 @@ def build_system_description(
         finding_lines.append("Detected in:")
         finding_lines.extend(f"  • {p}" for p in path_hints[:20])
         if len(path_hints) > 20:
+            finding_lines.append("  • …")
+    if code_locs:
+        finding_lines.append("Code location:")
+        finding_lines.extend(f"  • {p}" for p in code_locs[:20])
+        if len(code_locs) > 20:
             finding_lines.append("  • …")
 
     how_to_fix_lines: list[str] = []

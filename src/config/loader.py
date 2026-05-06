@@ -12,14 +12,20 @@ from config.errors import ConfigError
 from config.models import (
     DEFAULT_MAPPING_STORE,
     DEFAULT_SQLITE_PATH,
+    ISSUES_SYNC_FROM_HISTORICAL,
+    REOPEN_POLICY_NEW_WORK_ITEM,
     AppConfig,
     AzureBoardsConfig,
     AzureBoardsDefaults,
     OrgMapping,
     SnykConfig,
 )
-
-SEVERITY_LEVELS: tuple[str, ...] = ("low", "medium", "high", "critical")
+from config.policy_parse import (
+    coerce_bool,
+    normalize_reopen_policy,
+    normalize_severity,
+    validate_issues_sync_from,
+)
 
 _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 
@@ -40,14 +46,25 @@ _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
     },
 )
 
+_LEGACY_AZURE_BOARDS_ROOT_KEYS: frozenset[str] = frozenset(
+    {
+        "create_new_work_items",
+        "organization",
+        "project",
+    },
+)
 
 def _default_tree() -> dict[str, Any]:
     return {
         "azure_boards": {
-            "create_new_work_items": True,
-            "organization": "",
-            "project": "",
             "defaults": {
+                "organization": "",
+                "project": "",
+                "create_new_work_items": True,
+                "severity_threshold": "high",
+                "issues_sync_from": ISSUES_SYNC_FROM_HISTORICAL,
+                "create_only_when_fix_available": False,
+                "reopen_work_item_policy": REOPEN_POLICY_NEW_WORK_ITEM,
                 "work_item_type": "Task",
                 "work_item_state_active": "New",
                 "work_item_state_closed": "Closed",
@@ -56,7 +73,7 @@ def _default_tree() -> dict[str, Any]:
             "org_mappings": [],
         },
         "work_item_template": {},
-        "snyk": {"group_id": "", "severity_threshold": "high"},
+        "snyk": {"group_id": ""},
         "mapping_store": DEFAULT_MAPPING_STORE,
         "sqlite_path": DEFAULT_SQLITE_PATH,
     }
@@ -75,36 +92,12 @@ def _deep_merge_dict(base: dict[str, Any], overlay: Mapping[str, Any]) -> None:
             base[key] = val
 
 
-def _coerce_bool(value: Any, *, field_name: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        v = value.strip().lower()
-        if v in ("true", "1", "yes", "on"):
-            return True
-        if v in ("false", "0", "no", "off", ""):
-            return False
-    raise ConfigError(
-        f"{field_name} must be a boolean (got {type(value).__name__})",
-    )
-
-
 def _normalize_mapping_store(raw: str) -> str:
     s = raw.strip().lower()
     if s not in _ALLOWED_MAPPING_STORES:
         allowed = ", ".join(sorted(_ALLOWED_MAPPING_STORES))
         raise ConfigError(
             f"mapping_store must be one of: {allowed} (got {raw!r})",
-        )
-    return s
-
-
-def _normalize_severity(raw: str) -> str:
-    s = raw.strip().lower()
-    if s not in SEVERITY_LEVELS:
-        allowed = ", ".join(SEVERITY_LEVELS)
-        raise ConfigError(
-            f"snyk.severity_threshold must be one of: {allowed} (got {raw!r})",
         )
     return s
 
@@ -165,7 +158,10 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
         tree.setdefault("azure_boards", {})
         if not isinstance(tree["azure_boards"], dict):
             tree["azure_boards"] = {}
-        tree["azure_boards"]["create_new_work_items"] = _coerce_bool(
+        tree["azure_boards"].setdefault("defaults", {})
+        if not isinstance(tree["azure_boards"]["defaults"], dict):
+            tree["azure_boards"]["defaults"] = {}
+        tree["azure_boards"]["defaults"]["create_new_work_items"] = coerce_bool(
             raw,
             field_name="AZURE_BOARDS_CREATE_NEW_WORK_ITEMS",
         )
@@ -176,7 +172,10 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             tree.setdefault("azure_boards", {})
             if not isinstance(tree["azure_boards"], dict):
                 tree["azure_boards"] = {}
-            tree["azure_boards"]["organization"] = org
+            tree["azure_boards"].setdefault("defaults", {})
+            if not isinstance(tree["azure_boards"]["defaults"], dict):
+                tree["azure_boards"]["defaults"] = {}
+            tree["azure_boards"]["defaults"]["organization"] = org
 
     if _ENV_AZURE_BOARDS_PROJECT in os.environ:
         proj = os.environ[_ENV_AZURE_BOARDS_PROJECT].strip()
@@ -184,7 +183,10 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             tree.setdefault("azure_boards", {})
             if not isinstance(tree["azure_boards"], dict):
                 tree["azure_boards"] = {}
-            tree["azure_boards"]["project"] = proj
+            tree["azure_boards"].setdefault("defaults", {})
+            if not isinstance(tree["azure_boards"]["defaults"], dict):
+                tree["azure_boards"]["defaults"] = {}
+            tree["azure_boards"]["defaults"]["project"] = proj
 
     if _ENV_MAPPING_STORE in os.environ:
         ms = os.environ[_ENV_MAPPING_STORE].strip()
@@ -200,6 +202,16 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
 def _reject_deprecated_flat_work_item_keys(ab_raw: dict[str, Any]) -> None:
     """Reject unsupported flat ``work_item_*`` keys under ``azure_boards`` root."""
     for key in _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS:
+        if key in ab_raw:
+            raise ConfigError(
+                f"azure_boards.{key} is not supported; "
+                f"use azure_boards.defaults.{key} instead",
+            )
+
+
+def _reject_legacy_azure_boards_root_routing(ab_raw: dict[str, Any]) -> None:
+    """Reject legacy flat routing / toggle keys under ``azure_boards`` root."""
+    for key in _LEGACY_AZURE_BOARDS_ROOT_KEYS:
         if key in ab_raw:
             raise ConfigError(
                 f"azure_boards.{key} is not supported; "
@@ -277,17 +289,42 @@ def _parse_org_mappings(ab_raw: dict[str, Any]) -> list[OrgMapping]:
     return out
 
 
-def _parse_azure_boards_defaults(
-    ab_raw: dict[str, Any],
-) -> tuple[AzureBoardsDefaults, str, str, str]:
-    """Build ``AzureBoardsDefaults`` and duplicate flat fields on ``AzureBoardsConfig``."""
+def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
+    """Parse ``azure_boards.defaults`` into :class:`AzureBoardsDefaults`."""
     _reject_deprecated_flat_work_item_keys(ab_raw)
+    _reject_legacy_azure_boards_root_routing(ab_raw)
 
     defaults_raw = ab_raw.get("defaults")
     if defaults_raw is None:
         defaults_raw = {}
     if not isinstance(defaults_raw, dict):
         raise ConfigError("azure_boards.defaults must be a mapping")
+
+    org = _string_from_defaults_section(defaults_raw, "organization", hard_default="")
+    proj = _string_from_defaults_section(defaults_raw, "project", hard_default="")
+
+    create_new = coerce_bool(
+        defaults_raw.get("create_new_work_items", True),
+        field_name="azure_boards.defaults.create_new_work_items",
+    )
+
+    sev_raw = str(defaults_raw.get("severity_threshold", "high") or "high")
+    sev = normalize_severity(sev_raw, field_prefix="azure_boards.defaults.severity_threshold")
+
+    issues_from = validate_issues_sync_from(
+        str(defaults_raw.get("issues_sync_from", ISSUES_SYNC_FROM_HISTORICAL) or ""),
+    )
+
+    fix_only = coerce_bool(
+        defaults_raw.get("create_only_when_fix_available", False),
+        field_name="azure_boards.defaults.create_only_when_fix_available",
+    )
+
+    reopen_raw = str(
+        defaults_raw.get("reopen_work_item_policy", REOPEN_POLICY_NEW_WORK_ITEM)
+        or REOPEN_POLICY_NEW_WORK_ITEM,
+    )
+    reopen = normalize_reopen_policy(reopen_raw)
 
     wit_type = _string_from_defaults_section(
         defaults_raw,
@@ -311,13 +348,37 @@ def _parse_azure_boards_defaults(
     if not isinstance(wit_tmpl, dict):
         raise ConfigError("azure_boards.defaults.work_item_template must be a mapping")
 
-    defaults = AzureBoardsDefaults(
+    return AzureBoardsDefaults(
+        organization=org,
+        project=proj,
+        create_new_work_items=create_new,
+        severity_threshold=sev,
+        issues_sync_from=issues_from,
+        create_only_when_fix_available=fix_only,
+        reopen_work_item_policy=reopen,
         work_item_type=wit_type,
         work_item_state_active=wit_active,
         work_item_state_closed=wit_closed,
         work_item_template=dict(wit_tmpl),
     )
-    return defaults, wit_type, wit_active, wit_closed
+
+
+def _defaults_to_flat_config(d: AzureBoardsDefaults) -> AzureBoardsConfig:
+    """Mirror ``defaults`` onto flat :class:`AzureBoardsConfig` fields."""
+    return AzureBoardsConfig(
+        create_new_work_items=d.create_new_work_items,
+        organization=d.organization,
+        project=d.project,
+        severity_threshold=d.severity_threshold,
+        issues_sync_from=d.issues_sync_from,
+        create_only_when_fix_available=d.create_only_when_fix_available,
+        reopen_work_item_policy=d.reopen_work_item_policy,
+        work_item_type=d.work_item_type,
+        work_item_state_active=d.work_item_state_active,
+        work_item_state_closed=d.work_item_state_closed,
+        defaults=d,
+        org_mappings=[],
+    )
 
 
 def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
@@ -342,17 +403,16 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             "azure_boards.org_mappings[].snyk_org_slug on each mapping row",
         )
 
-    known_snyk = {"group_id", "severity_threshold"}
+    if "severity_threshold" in sn_raw:
+        raise ConfigError(
+            "snyk.severity_threshold is not supported; use "
+            "azure_boards.defaults.severity_threshold instead",
+        )
+
+    known_snyk = {"group_id"}
     extra = {k: v for k, v in sn_raw.items() if k not in known_snyk}
 
     gid = str(sn_raw.get("group_id", "") or "").strip()
-    sev_raw = str(sn_raw.get("severity_threshold", "high") or "high")
-    sev = _normalize_severity(sev_raw)
-
-    create_new = _coerce_bool(
-        ab_raw.get("create_new_work_items", True),
-        field_name="azure_boards.create_new_work_items",
-    )
 
     if "snyk_org_slug" in ab_raw:
         raise ConfigError(
@@ -361,11 +421,11 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             "does not configure an org slug (Snyk UI links in work items may be incomplete).",
         )
 
-    org = str(ab_raw.get("organization", "") or "").strip()
-    proj = str(ab_raw.get("project", "") or "").strip()
-
-    defaults_obj, wit_type, wit_active, wit_closed = _parse_azure_boards_defaults(ab_raw)
+    defaults_obj = _parse_azure_boards_defaults(ab_raw)
     org_mappings = _parse_org_mappings(ab_raw)
+
+    flat = _defaults_to_flat_config(defaults_obj)
+    flat.org_mappings = org_mappings
 
     ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
     if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
@@ -379,20 +439,10 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         sqlite_path = str(sp_raw).strip()
 
     return AppConfig(
-        azure_boards=AzureBoardsConfig(
-            create_new_work_items=create_new,
-            organization=org,
-            project=proj,
-            work_item_type=wit_type,
-            work_item_state_active=wit_active,
-            work_item_state_closed=wit_closed,
-            defaults=defaults_obj,
-            org_mappings=org_mappings,
-        ),
+        azure_boards=flat,
         work_item_template=dict(wit),
         snyk=SnykConfig(
             group_id=gid,
-            severity_threshold=sev,
             extra=extra,
         ),
         mapping_store=mapping_store,

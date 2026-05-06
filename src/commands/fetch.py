@@ -11,6 +11,7 @@ from typing import Any
 from config import ConfigError, load_app_config
 from snyk.client import GroupIssueListParams, IssuesClient
 from snyk.errors import SnykApiError
+from sync.lifecycle import effective_severity_levels_from_threshold
 
 
 def register_fetch_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -145,11 +146,19 @@ def _cli_group_id_for_merge(
     return None
 
 
-def _list_params_from_args(args: argparse.Namespace) -> GroupIssueListParams:
-    """Build list parameters from CLI args."""
+def _list_params_from_args(
+    args: argparse.Namespace,
+    *,
+    default_severity_threshold: str,
+) -> GroupIssueListParams:
+    """Build list parameters from CLI args.
+
+    When ``--severity`` is omitted, derive levels from merged
+    ``azure_boards.defaults.severity_threshold``.
+    """
     sev: tuple[str, ...] | None
     if args.severities is None:
-        sev = None
+        sev = effective_severity_levels_from_threshold(default_severity_threshold)
     else:
         sev = tuple(str(s).strip() for s in args.severities if str(s).strip())
     return GroupIssueListParams(
@@ -211,7 +220,10 @@ def run_fetch(args: argparse.Namespace) -> int:
     client = IssuesClient()
     try:
         if args.action == "list":
-            params = _list_params_from_args(args)
+            params = _list_params_from_args(
+                args,
+                default_severity_threshold=config.azure_boards.defaults.severity_threshold,
+            )
             if org_id:
                 for rec in client.iter_org_issues(org_id, list_params=params):
                     print(json.dumps(rec, sort_keys=True))

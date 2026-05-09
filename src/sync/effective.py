@@ -12,6 +12,7 @@ from config.policy_parse import (
 )
 from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig, AzureBoardsDefaults, OrgMapping
+from config.snyk_origins import parse_sync_included_snyk_origins
 from config.template_merge import merge_work_item_templates
 
 
@@ -135,6 +136,14 @@ def _merged_defaults_with_overrides(
             )
         appendix = str(raw_ap or "")
 
+    if "sync_included_snyk_origins" in o:
+        allowlist = parse_sync_included_snyk_origins(
+            o["sync_included_snyk_origins"],
+            field_prefix="org_mappings[].overrides.sync_included_snyk_origins",
+        )
+    else:
+        allowlist = base.sync_included_snyk_origins
+
     wit_tmpl = dict(base.work_item_template)
 
     return AzureBoardsDefaults(
@@ -150,6 +159,7 @@ def _merged_defaults_with_overrides(
         work_item_state_closed=str(wit_closed).strip() or base.work_item_state_closed,
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
+        sync_included_snyk_origins=allowlist,
     )
 
 
@@ -174,4 +184,5 @@ def boards_for_org_mapping(app: AppConfig, m: OrgMapping) -> AzureBoardsConfig:
         work_item_state_closed=merged_defaults.work_item_state_closed,
         defaults=merged_defaults,
         org_mappings=[],
+        sync_included_snyk_origins=merged_defaults.sync_included_snyk_origins,
     )

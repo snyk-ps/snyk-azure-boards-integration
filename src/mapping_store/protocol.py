@@ -8,7 +8,7 @@ from typing import Protocol, runtime_checkable
 
 @dataclass(frozen=True, slots=True)
 class MappingRow:
-    """One persisted Snyk↔work-item mapping row including store timestamps."""
+    """One **issues sync persistence** row (Snyk issue state + optional Boards link)."""
 
     group_id: str
     org_id: str
@@ -21,6 +21,8 @@ class MappingRow:
     work_item_status: str
     snyk_project_name: str
     snyk_project_origin: str
+    excluded: bool
+    exclusion_reason: str
     created_at: str
     updated_at: str
 
@@ -54,6 +56,8 @@ class MappingStore(Protocol):
         work_item_status: str,
         snyk_project_name: str = "",
         snyk_project_origin: str = "",
+        excluded: bool = False,
+        exclusion_reason: str = "",
     ) -> MappingRow:
         """Insert or update by natural key; set ``created_at`` / ``updated_at`` in UTC ISO 8601 Z."""
         ...

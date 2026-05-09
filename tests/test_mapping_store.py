@@ -65,6 +65,8 @@ def test_sqlite_upsert_round_trip_and_preserves_created_at(tmp_path: Path) -> No
     assert second.created_at == created
     assert second.snyk_status == "resolved"
     assert second.updated_at >= second.created_at
+    assert second.excluded is False
+    assert second.exclusion_reason == ""
 
 
 def test_sqlite_get_and_delete(tmp_path: Path) -> None:
@@ -124,8 +126,8 @@ def test_plain_insert_duplicate_natural_key_raises(tmp_path: Path) -> None:
             f"INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} "
             "(group_id, org_id, project_id, issue_id, snyk_status, organization, "
             "project, work_item_id, work_item_status, snyk_project_name, "
-            "snyk_project_origin, created_at, updated_at) "
-            "VALUES ('g','o','p','i','open','a','b','1','New','','','t1','t1')",
+            "snyk_project_origin, excluded, exclusion_reason, created_at, updated_at) "
+            "VALUES ('g','o','p','i','open','a','b','1','New','','','false','','t1','t1')",
         )
         conn.commit()
         with pytest.raises(sqlite3.IntegrityError):
@@ -133,8 +135,8 @@ def test_plain_insert_duplicate_natural_key_raises(tmp_path: Path) -> None:
                 f"INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} "
                 "(group_id, org_id, project_id, issue_id, snyk_status, organization, "
                 "project, work_item_id, work_item_status, snyk_project_name, "
-                "snyk_project_origin, created_at, updated_at) "
-                "VALUES ('g','o','p','i','open','a','b','2','New','','','t2','t2')",
+                "snyk_project_origin, excluded, exclusion_reason, created_at, updated_at) "
+                "VALUES ('g','o','p','i','open','a','b','2','New','','','false','','t2','t2')",
             )
             conn.commit()
     finally:
@@ -189,7 +191,9 @@ def test_init_script_runs_twice_zero_exit(tmp_path: Path) -> None:
         )
         row = cur.fetchone()
         assert row is not None
-        assert "UNIQUE" in (row[0] or "").upper()
+        sql_upper = (row[0] or "").upper()
+        assert "UNIQUE" in sql_upper
+        assert "EXCLUDED" in sql_upper
     finally:
         conn.close()
 
@@ -205,6 +209,8 @@ def test_ddl_source_contains_expected_columns() -> None:
         "WORK_ITEM_STATUS",
         "SNYK_PROJECT_NAME",
         "SNYK_PROJECT_ORIGIN",
+        "EXCLUDED",
+        "EXCLUSION_REASON",
         "CREATED_AT",
         "UPDATED_AT",
     ):

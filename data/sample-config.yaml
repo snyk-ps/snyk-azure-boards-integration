@@ -19,6 +19,9 @@ azure_boards:
     work_item_type: Task
     work_item_state_active: New
     work_item_state_closed: Closed
+    # Optional: inclusive allowlist of Snyk project origins (see README). Omit = all origins.
+    # Example (sync Git-integrated projects only, exclude CLI): sync_included_snyk_origins: "github,azure-repos,gitlab"
+    # sync_included_snyk_origins: ""
     # Optional: plain text appended after the auto-generated work item description (one extra block).
     # work_item_description_appendix: |
     #   Internal: request Snyk access at https://example.internal/access
@@ -40,6 +43,8 @@ azure_boards:
   #     snyk_org_slug: "your-snyk-org-slug"
   #     overrides:
   #       severity_threshold: critical
+  #       # Optional per-target origin allowlist (overrides azure_boards.defaults.sync_included_snyk_origins).
+  #       # sync_included_snyk_origins: "github,gitlab"
   #       work_item_type: Task
   #       # work_item_description_appendix: "Note for this ADO project only."
   #       # work_item_template:

@@ -27,6 +27,8 @@ class AzureBoardsDefaults:
     work_item_state_closed: str = "Closed"
     work_item_description_appendix: str = ""
     work_item_template: dict[str, Any] = field(default_factory=dict)
+    #: Inclusive allowlist of Snyk ``attributes.origin`` values; ``None`` = no filter.
+    sync_included_snyk_origins: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -56,6 +58,7 @@ class AzureBoardsConfig:
     work_item_state_closed: str = "Closed"
     defaults: AzureBoardsDefaults = field(default_factory=AzureBoardsDefaults)
     org_mappings: list[OrgMapping] = field(default_factory=list)
+    sync_included_snyk_origins: tuple[str, ...] | None = None
 
 
 @dataclass

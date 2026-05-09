@@ -35,6 +35,7 @@ from sync.lifecycle import (
     derive_snyk_status,
     effective_severity_levels_from_threshold,
 )
+from sync.origin_filter import classify_origin_for_allowlist
 from sync.patch_build import build_create_patch, build_update_patch
 from sync.validate import validate_sync_config, validate_sync_environment
 
@@ -327,17 +328,52 @@ def _sync_one_issue(
     snyk_pn = str(rec.get("snyk_project_name") or "").strip()
     stored_name = str(row.snyk_project_name if row else "").strip()
     stored_origin = str(row.snyk_project_origin if row else "").strip()
+
+    allowlist = ab.defaults.sync_included_snyk_origins
+    active_allowlist = bool(allowlist)
+    org_for_project = ""
+    if use_org_scope_for_detail and snyk_org_id_for_detail:
+        org_for_project = snyk_org_id_for_detail.strip()
+    elif active_allowlist and oid:
+        org_for_project = str(oid).strip()
+
     meta_name, meta_origin = "", ""
-    if use_org_scope_for_detail and snyk_org_id_for_detail and pid:
-        if not stored_name or not stored_origin:
+    if pid and org_for_project:
+        want_project_fetch = (not stored_name or not stored_origin) or (
+            active_allowlist and not stored_origin
+        )
+        if want_project_fetch:
             meta_name, meta_origin = _fetch_project_metadata(
                 issues_client,
-                snyk_org_id_for_detail,
+                org_for_project,
                 pid,
                 log,
             )
     snyk_pn = stored_name or snyk_pn or meta_name
     snyk_po = stored_origin or meta_origin
+
+    included, exclusion_reason = classify_origin_for_allowlist(snyk_po, allowlist)
+    if not included:
+        # create_new_work_items does not block persisting excluded rows (issues sync
+        # persistence for reporting). Azure DevOps is not mutated for origin-excluded issues.
+        wid_keep = str(row.work_item_id) if row is not None else ""
+        wst_keep = str(row.work_item_status) if row is not None else ""
+        store.upsert(
+            group_id=gid,
+            org_id=oid,
+            project_id=pid,
+            issue_id=iid,
+            snyk_status=new_status,
+            organization=ado_org,
+            project=ado_proj,
+            work_item_id=wid_keep,
+            work_item_status=wst_keep,
+            snyk_project_name=snyk_pn,
+            snyk_project_origin=snyk_po,
+            excluded=True,
+            exclusion_reason=exclusion_reason,
+        )
+        return
 
     target_label = effective_target_label_for_title(
         snyk_project_name=snyk_pn,
@@ -358,6 +394,9 @@ def _sync_one_issue(
 
     prev_snyk = row.snyk_status if row is not None else None
     prev_wid = str(row.work_item_id) if row is not None else ""
+    # Rows persisted while origin-excluded often have no work_item_id; if the issue
+    # becomes origin-included (allowlist widens / origin resolves), treat like unmapped.
+    unmapped_for_ado = row is None or not prev_wid.strip()
 
     reopen = (
         row is not None
@@ -365,11 +404,13 @@ def _sync_one_issue(
         and row.snyk_status in (DERIVED_RESOLVED, DERIVED_IGNORED)
     )
 
-    if row is None and new_status != DERIVED_OPEN:
+    if unmapped_for_ado and new_status != DERIVED_OPEN:
         log.debug("sync skip unmapped non-open issue=%s status=%s", issue_key, new_status)
         return
 
-    if row is None:
+    # Reopen transitions (resolved/ignored → open) must use the reopen branch below so
+    # policy and audit comments stay consistent—even when work_item_id is still empty.
+    if unmapped_for_ado and not reopen:
         if not ab.create_new_work_items:
             return
         if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
@@ -401,6 +442,8 @@ def _sync_one_issue(
             work_item_status=wst,
             snyk_project_name=snyk_pn,
             snyk_project_origin=snyk_po,
+            excluded=False,
+            exclusion_reason="",
         )
         return
 
@@ -462,6 +505,8 @@ def _sync_one_issue(
                     work_item_status=wst,
                     snyk_project_name=snyk_pn,
                     snyk_project_origin=snyk_po,
+                    excluded=False,
+                    exclusion_reason="",
                 )
                 if prev_snyk is not None and prev_snyk != new_status:
                     text = _format_audit_comment(
@@ -517,6 +562,8 @@ def _sync_one_issue(
             work_item_status=wst,
             snyk_project_name=snyk_pn,
             snyk_project_origin=snyk_po,
+            excluded=False,
+            exclusion_reason="",
         )
         if prev_snyk is not None and prev_snyk != new_status:
             text = _format_audit_comment(
@@ -569,6 +616,8 @@ def _sync_one_issue(
         work_item_status=wst,
         snyk_project_name=snyk_pn,
         snyk_project_origin=snyk_po,
+        excluded=False,
+        exclusion_reason="",
     )
 
     if prev_snyk is not None and prev_snyk != new_status:

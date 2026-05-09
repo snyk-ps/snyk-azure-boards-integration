@@ -26,6 +26,7 @@ from config.policy_parse import (
     normalize_severity,
     validate_issues_sync_from,
 )
+from config.snyk_origins import parse_sync_included_snyk_origins
 
 _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 
@@ -356,6 +357,11 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         )
     appendix = str(appendix_raw or "")
 
+    allowlist = parse_sync_included_snyk_origins(
+        defaults_raw.get("sync_included_snyk_origins"),
+        field_prefix="azure_boards.defaults.sync_included_snyk_origins",
+    )
+
     return AzureBoardsDefaults(
         organization=org,
         project=proj,
@@ -369,6 +375,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         work_item_state_closed=wit_closed,
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
+        sync_included_snyk_origins=allowlist,
     )
 
 
@@ -387,6 +394,7 @@ def _defaults_to_flat_config(d: AzureBoardsDefaults) -> AzureBoardsConfig:
         work_item_state_closed=d.work_item_state_closed,
         defaults=d,
         org_mappings=[],
+        sync_included_snyk_origins=d.sync_included_snyk_origins,
     )
 
 

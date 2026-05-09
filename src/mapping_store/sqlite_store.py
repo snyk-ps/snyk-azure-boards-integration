@@ -17,6 +17,15 @@ def _utc_now_iso_z() -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def _text_to_excluded(raw: object) -> bool:
+    s = str(raw or "").strip().lower()
+    return s in ("true", "1", "yes")
+
+
+def _excluded_to_text(flag: bool) -> str:
+    return "true" if flag else "false"
+
+
 def _row_from_row_tuple(t: tuple[object, ...]) -> MappingRow:
     return MappingRow(
         group_id=str(t[0]),
@@ -30,15 +39,17 @@ def _row_from_row_tuple(t: tuple[object, ...]) -> MappingRow:
         work_item_status=str(t[8]),
         snyk_project_name=str(t[9] or ""),
         snyk_project_origin=str(t[10] or ""),
-        created_at=str(t[11]),
-        updated_at=str(t[12]),
+        excluded=_text_to_excluded(t[11]),
+        exclusion_reason=str(t[12] or ""),
+        created_at=str(t[13]),
+        updated_at=str(t[14]),
     )
 
 
 _SELECT_COLUMNS = (
     "group_id, org_id, project_id, issue_id, snyk_status, organization, "
     "project, work_item_id, work_item_status, snyk_project_name, "
-    "snyk_project_origin, created_at, updated_at"
+    "snyk_project_origin, excluded, exclusion_reason, created_at, updated_at"
 )
 
 
@@ -88,16 +99,21 @@ class SqliteMappingStore:
         work_item_status: str,
         snyk_project_name: str = "",
         snyk_project_origin: str = "",
+        excluded: bool = False,
+        exclusion_reason: str = "",
     ) -> MappingRow:
         now = _utc_now_iso_z()
         pn = str(snyk_project_name or "")
         po = str(snyk_project_origin or "")
+        ex = bool(excluded)
+        reason = str(exclusion_reason or "") if ex else ""
+        ex_text = _excluded_to_text(ex)
         upsert_sql = f"""
             INSERT INTO {ISSUE_WORK_ITEM_MAP_TABLE} (
                 group_id, org_id, project_id, issue_id, snyk_status, organization,
                 project, work_item_id, work_item_status, snyk_project_name,
-                snyk_project_origin, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                snyk_project_origin, excluded, exclusion_reason, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(group_id, org_id, project_id, issue_id) DO UPDATE SET
                 snyk_status = excluded.snyk_status,
                 organization = excluded.organization,
@@ -106,6 +122,8 @@ class SqliteMappingStore:
                 work_item_status = excluded.work_item_status,
                 snyk_project_name = excluded.snyk_project_name,
                 snyk_project_origin = excluded.snyk_project_origin,
+                excluded = excluded.excluded,
+                exclusion_reason = excluded.exclusion_reason,
                 updated_at = excluded.updated_at
         """
         params = (
@@ -120,6 +138,8 @@ class SqliteMappingStore:
             work_item_status,
             pn,
             po,
+            ex_text,
+            reason,
             now,
             now,
         )

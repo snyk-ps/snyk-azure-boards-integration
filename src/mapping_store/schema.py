@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS {ISSUE_WORK_ITEM_MAP_TABLE} (
     work_item_status TEXT,
     snyk_project_name TEXT,
     snyk_project_origin TEXT,
+    excluded TEXT NOT NULL DEFAULT 'false',
+    exclusion_reason TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (group_id, org_id, project_id, issue_id)
@@ -29,6 +31,8 @@ CREATE TABLE IF NOT EXISTS {ISSUE_WORK_ITEM_MAP_TABLE} (
 _ALTER_STATEMENTS: tuple[str, ...] = (
     f"ALTER TABLE {ISSUE_WORK_ITEM_MAP_TABLE} ADD COLUMN snyk_project_name TEXT",
     f"ALTER TABLE {ISSUE_WORK_ITEM_MAP_TABLE} ADD COLUMN snyk_project_origin TEXT",
+    f"ALTER TABLE {ISSUE_WORK_ITEM_MAP_TABLE} ADD COLUMN excluded TEXT NOT NULL DEFAULT 'false'",
+    f"ALTER TABLE {ISSUE_WORK_ITEM_MAP_TABLE} ADD COLUMN exclusion_reason TEXT NOT NULL DEFAULT ''",
 )
 
 

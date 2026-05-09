@@ -25,6 +25,11 @@ When the origin is known but not in the allowlist, **`exclusion_reason`** SHALL 
 - **WHEN** effective allowlist contains **`github`** and **`snyk_project_origin`** after strip is **`github`**
 - **THEN** the issue SHALL be origin-included subject to **P2-FR-1** and other requirements
 
+#### Scenario: Re-included open issue with empty work_item_id creates a work item
+
+- **WHEN** issues sync persistence already holds a row for the issue with **empty** **`work_item_id`** (for example the issue was **origin-excluded** on a prior run and Azure Boards was never mutated), the effective allowlist is **non-empty**, the issue is now **origin-included**, **`create_new_work_items`** is **true**, and the derived Snyk status is **open**
+- **THEN** **`sync`** SHALL create an Azure Boards work item for that issue (same rules as for a missing row) and SHALL upsert **`work_item_id`** and **`excluded`** **`false`**, except that **reopen** transitions (**resolved** or **ignored** → **open**) SHALL use the existing **reopen** orchestration path (which already **creates** when **`work_item_id`** is empty)
+
 ---
 
 ### Requirement: Persist exclusion fields on issues sync persistence upserts

@@ -27,6 +27,7 @@ The integration lists Snyk issues, resolves **`snyk_project_origin`** via the Sn
 | **Loader allowlist validation** | Reject unknown tokens at YAML load with a pointer to **`README.md`** so misconfiguration fails fast. |
 | **TEXT `true`/`false` for `excluded` in SQLite** | Align with all-TEXT column style; implementation MAY coerce in Python layer. |
 | **Keep table name** **`issue_work_item_map`** | Avoids migration risk; README clarifies logical name **issues sync persistence**. |
+| **Empty `work_item_id` ⇒ create when re-included** | An origin-excluded row may exist with no Boards link; widening the allowlist (or resolving origin) must follow the same **create** path as “no row” for open issues so sync does not attempt an Azure **update** without an id. |
 
 **Alternatives considered:** Separate project-policy table (rejected for this proposal—classification is issue-sourced after Issues API). Client-side filter only without persistence (rejected—operators want **`excluded`** columns for reporting).
 

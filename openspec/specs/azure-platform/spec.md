@@ -36,7 +36,8 @@ The integration runs as a container on **Azure Container Apps**. It runs on a **
 | Azure DevOps | **Work item ID** | Boards work item linked to this Snyk issue. |
 | Azure DevOps | **Work item status** | Boards work item state persisted on the mapping row (distinct from Snyk status). |
 | Snyk | **Project display name** | Human-readable project label from Snyk Projects API (**`attributes.name`**), when populated. |
-| Snyk | **Project origin** | Origin label from the same API (**`attributes.origin`**), when populated. |
+| Snyk | **Excluded (origin policy)** | When **`true`**, **`sync`** does not mutate Boards for origin policy; persists with **`exclusion_reason`**. |
+| Snyk | **Exclusion reason** | Machine-readable label (**`origin_unknown`**, **`origin_not_in_allowlist`**) when **`excluded`**. |
 
 Additional columns (for example **`created_at`** / **`updated_at`** row metadata in UTC ISO 8601, last sync time, prior work item ids for **P2-FR-8** audit, or issue severity snapshot) may be added by the implementation but are not required beyond the normative mapping requirements below.
 
@@ -76,7 +77,7 @@ Either pattern uses **DefaultAzureCredential** (or equivalent) for access; permi
 
 ### Requirement: Mapping row schema and logical identity
 
-The durable mapping store SHALL persist at minimum the following attributes per row, using **snake_case** **column** names and **TEXT** storage for all listed fields. Together they support **stable mapping** (**P2-FR-7**) and traceability for **re-open** behavior (**P2-FR-8**).
+The durable **issues sync persistence** store (historically described as **Snyk↔work-item mapping**; physical SQLite table **`issue_work_item_map`** when using SQLite) SHALL persist at minimum the following attributes per row, using **snake_case** **column** names and **TEXT** storage for all listed fields. Together they support **stable mapping** (**P2-FR-7**), traceability for **re-open** behavior (**P2-FR-8**), and **origin-based exclusion** reporting.
 
 | Field | Role |
 |-------|------|
@@ -91,18 +92,25 @@ The durable mapping store SHALL persist at minimum the following attributes per 
 | `work_item_status` | Azure Boards work item state as persisted for this mapping row. |
 | `snyk_project_name` | Display name from Snyk **`GET /orgs/{org_id}/projects/{project_id}`** **`attributes.name`** when known (may be empty until populated). |
 | `snyk_project_origin` | Origin label from the same project **`attributes.origin`** when known (may be empty until populated). |
+| `excluded` | When **`true`**, the issue is **not** eligible for Azure Boards mutations per **`sync-lifecycle`** origin policy; when **`false`**, origin policy (if any) permits processing. |
+| `exclusion_reason` | When **`excluded`** is **`true`**, a non-empty stable machine-readable reason label defined by **`sync-lifecycle`**; otherwise empty. |
 
-The logical identity of one **current** mapping for a Snyk issue in a given scope SHALL be **`(group_id, org_id, project_id, issue_id)`**. The implementation SHALL enforce **at most one row** per that tuple via a **UNIQUE** constraint on those four columns (or equivalent enforcement).
+The logical identity of one **current** row for a Snyk issue in a given scope SHALL be **`(group_id, org_id, project_id, issue_id)`**. The implementation SHALL enforce **at most one row** per that tuple via a **UNIQUE** constraint on those four columns (or equivalent enforcement).
 
 #### Scenario: Uniqueness prevents duplicate scope rows
 
 - **WHEN** a second insert is attempted with the same `group_id`, `org_id`, `project_id`, and `issue_id` as an existing row
-- **THEN** the store SHALL reject the duplicate per the UNIQUE constraint (or equivalent) so a single current mapping per issue-in-scope is preserved
+- **THEN** the store SHALL reject the duplicate per the UNIQUE constraint (or equivalent) so a single current row per issue-in-scope is preserved
 
 #### Scenario: snyk_status uses derived vocabulary
 
 - **WHEN** a sync run persists `snyk_status` after evaluating Snyk Issues attributes
 - **THEN** the stored value SHALL be one of `open`, `resolved`, or `ignored` as defined by **`sync-lifecycle`**, never a legacy `closed` label for Snyk API `status`
+
+#### Scenario: Excluded rows carry reason when excluded
+
+- **WHEN** **`sync`** persists **`excluded`** as **`true`**
+- **THEN** **`exclusion_reason`** SHALL be non-empty and SHALL match a label defined in **`sync-lifecycle`**
 
 ---
 

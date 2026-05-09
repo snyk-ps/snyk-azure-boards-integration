@@ -171,3 +171,19 @@ The smoke command SHALL NOT accept a PAT as a CLI flag. By default it SHALL NOT 
 - **THEN** the client SHALL be invoked with those routing values and a single `get_work_item` request
 
 **Related:** Audit comments on lifecycle transitions (**P2-FR-9**) will use the programmatic add-comment API in future sync work; this requirement only defines smoke and client capability.
+
+---
+
+### Requirement: Terminal HTTP audit logging for WIT API calls
+
+The **`WorkItemsClient`** SHALL emit **one** Python **`logging`** audit line per **logical** HTTP request to Azure DevOps WIT (including work item comments) at **terminal outcome** (after bounded **429** retry and any **GET** recovery retries defined for that method), at **`INFO`** for success and **`WARNING`** or **`ERROR`** for failure as appropriate. Each line SHALL satisfy the **safe** URL and **no-credentials** rules in the **`observability`** capability for **P2-FR-6.2**. When a **`sync_run_id`** is active in **`observability.sync_context`**, the client SHALL include it in the audit output.
+
+#### Scenario: Successful WIT call is audited
+
+- **WHEN** a supported WIT **`GET`**, **`POST`**, or **`PATCH`** completes with HTTP **2xx**
+- **THEN** an audit log record SHALL include method, status code, duration, **`integration`** identifying Azure DevOps, and a safe target
+
+#### Scenario: Auth error is audited without PAT
+
+- **WHEN** a WIT request fails with **401** or **403**
+- **THEN** an audit log record SHALL include status code and **SHALL NOT** log **`AZURE_DEVOPS_PAT`** or Basic auth material

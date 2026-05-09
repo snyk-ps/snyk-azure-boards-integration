@@ -24,6 +24,6 @@
 - [x] 5.1 Extend **`README.md`** with an **Alerting runbook**: Action Group; **log-based** rules; sample **Kusto** for **`sync_duration_seconds`** &gt; threshold (document **300s** as starting point); repeated auth/connectivity pattern matching implementation; optional **staleness** (no **`sync_outcome`=`success`** within **N**× schedule). State that **IaC for alerts is not** in this repo.
 - [x] 5.2 Match Kusto examples to the **actual** log line format chosen in implementation (JSON vs key=value).
 
-## 6. Spec merge (**do not edit `openspec/specs/` by hand before archive**)
+## 6. Spec merge (at archive)
 
-- [ ] 6.1 When you run **`openspec archive change`** for **`observability-fr6-sync-health-logs`**, let the archive workflow merge **`openspec/changes/observability-fr6-sync-health-logs/specs/**`** into **`openspec/specs/**`** and reconcile **`openspec/specs/observability/spec.md`** (+ **`openspec/config.yaml`** context if applicable). Normative deltas remain **only** under the change folder until then.
+- [x] 6.1 Merge **`openspec/changes/observability-fr6-sync-health-logs/specs/**`** into **`openspec/specs/**`** and update **`openspec/config.yaml`** context as part of **`openspec archive change`**.

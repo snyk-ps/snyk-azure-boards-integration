@@ -486,3 +486,21 @@ When the sync design requires reading Boards state for reconciliation, the appli
 
 - **WHEN** more than 200 distinct mapped work items need refresh in one run
 - **THEN** the application SHALL issue multiple list-by-ids calls with no more than 200 ids each
+
+---
+
+### Requirement: Sync run correlation and duration summary
+
+The **`sync`** orchestration SHALL bind a unique **`sync_run_id`** for the duration of each **`sync`** invocation (via **`observability.sync_context`**) so **P2-FR-6.2** HTTP audit logs can be correlated.
+
+The **`sync`** orchestration SHALL emit exactly **one** summary log record at the end of every **`sync`** invocation (all exit paths) containing **`sync_duration_seconds`**, **`sync_outcome`**, and **`sync_run_id`**, as specified in the **`observability`** capability.
+
+#### Scenario: sync_run_id ties HTTP audits to summary
+
+- **WHEN** **`sync`** runs to completion with logging enabled
+- **THEN** HTTP audit logs from Snyk and Azure DevOps for that invocation SHALL carry the same **`sync_run_id`** as the final summary log
+
+#### Scenario: Summary emitted once per invocation
+
+- **WHEN** **`sync`** is invoked once
+- **THEN** exactly one summary log with **`sync_duration_seconds`** SHALL be emitted for that invocation

@@ -11,7 +11,7 @@ context: |
   - Secrets: Azure Key Vault for SNYK_TOKEN and Azure DevOps PAT; ACA references as env vars — never embed in code or images.
   - Identity: system-assigned managed identity; application code uses DefaultAzureCredential for Key Vault, Table Storage, Files/Blob (config), and other Entra-protected endpoints.
   - Operator config: non-secret YAML only in Azure (Azure Files mount or Blob download at startup); hot-reload out of scope unless specified; restart/revision to reload. Secrets stay in Key Vault.
-  - Observability: ACA OpenTelemetry agent + Application Insights / Log Analytics; custom OTel metric for sync latency (P2-FR-6.3). Alerts: e.g. avg sync duration > 300s; log search for "Authentication Failed" > 3 times in 10 minutes.
+  - Observability: ACA OpenTelemetry agent + Application Insights / Log Analytics; structured **`integration_audit`** JSON logs for **`integration_http`** and **`sync_summary`** (`sync_duration_seconds`) for **P2-FR-6.x**; log-based alerts (e.g. **`sync_duration_seconds`** > 300s; **`Authentication Failed`** in HTTP audit). Optional custom OTel metrics are out of scope unless specified.
 
   APIs:
   - Snyk: REST Issues API (JSON:API), base https://api.snyk.io/rest 

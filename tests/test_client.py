@@ -2,12 +2,14 @@
 
 import io
 import json
+import logging
 from http.client import HTTPMessage
 
 import pytest
 from urllib.error import HTTPError
 from urllib.request import Request
 
+from observability.sync_context import reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 from snyk.constants import SNYK_REST_API_VERSION
 from snyk.errors import (
@@ -79,6 +81,67 @@ def test_iter_org_issues_two_pages_follows_links_next() -> None:
     client = IssuesClient(token="t", opener=opener)
     rows = list(client.iter_org_issues(oid))
     assert [r.get("issue_id") for r in rows] == ["a", "b"]
+
+
+def test_get_org_issue_emits_integration_audit_json(caplog: pytest.LogCaptureFixture) -> None:
+    oid = "o1"
+    issue = "i1"
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        return _FakeResp(_page_json(data=_issue_resource("ik")))
+
+    client = IssuesClient(token="t", opener=opener)
+    with caplog.at_level(logging.INFO, logger="integration_audit"):
+        client.get_org_issue(oid, issue)
+    audit_msgs = [r.message for r in caplog.records if r.name == "integration_audit"]
+    assert len(audit_msgs) == 1
+    row = json.loads(audit_msgs[0])
+    assert row["event"] == "integration_http"
+    assert row["integration"] == "snyk"
+    assert row["http_status"] == 200
+    assert row["method"] == "GET"
+    assert "secret" not in audit_msgs[0].lower()
+
+
+def test_get_org_issue_audit_includes_sync_run_id(caplog: pytest.LogCaptureFixture) -> None:
+    oid = "o1"
+    issue = "i1"
+    tok = set_sync_run_id("run-abc")
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        return _FakeResp(_page_json(data=_issue_resource("ik")))
+
+    try:
+        client = IssuesClient(token="t", opener=opener)
+        with caplog.at_level(logging.INFO, logger="integration_audit"):
+            client.get_org_issue(oid, issue)
+    finally:
+        reset_sync_run_id(tok)
+    row = json.loads(
+        [r.message for r in caplog.records if r.name == "integration_audit"][0],
+    )
+    assert row.get("sync_run_id") == "run-abc"
+
+
+def test_get_org_issue_auth_audit_no_token_leak(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "super-secret-token"
+
+    def opener(req: Request, timeout: float = 0) -> object:
+        hdrs = HTTPMessage()
+        raise HTTPError(req.full_url, 401, "Unauthorized", hdrs, io.BytesIO(b"{}"))
+
+    client = IssuesClient(token=secret, opener=opener)
+    with caplog.at_level(logging.WARNING, logger="integration_audit"):
+        with pytest.raises(SnykAuthError):
+            client.get_org_issue("o", "i")
+    joined = " ".join(r.message for r in caplog.records)
+    assert secret not in joined
+    assert "Authorization" not in joined
+    rows = [json.loads(r.message) for r in caplog.records if r.name == "integration_audit"]
+    assert rows[-1]["http_status"] == 401
+    assert "Authentication Failed" in rows[-1].get("error", "")
 
 
 def test_get_org_issue_success_normalized() -> None:

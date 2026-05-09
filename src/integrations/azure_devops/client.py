@@ -11,6 +11,9 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from observability.integration_audit import log_integration_http
+from observability.sync_context import get_sync_run_id
+
 from integrations.azure_devops.constants import (
     AZURE_DEVOPS_COMMENT_API_VERSION,
     AZURE_DEVOPS_PAT_ENV,
@@ -173,6 +176,8 @@ class WorkItemsClient:
         deadline_429 = self._monotonic() + self._rate_limit_max_wait_seconds
         attempt_429 = 0
         attempt_get_recovery = 0
+        start = self._monotonic()
+        m = (method or "GET").upper()
         while True:
             req = Request(
                 url,
@@ -183,13 +188,27 @@ class WorkItemsClient:
             try:
                 with self._opener(req, timeout=self._timeout) as resp:
                     raw_body = resp.read()
+                    raw_status = getattr(resp, "status", None)
+                    if raw_status is None:
+                        raw_status = getattr(resp, "code", None)
+                    status = int(raw_status) if raw_status is not None else 200
             except HTTPError as exc:
                 code = int(exc.code)
+                elapsed_ms = (self._monotonic() - start) * 1000.0
                 if code == 429:
                     ra = _parse_retry_after_seconds(getattr(exc, "headers", None))
                     wait = ra if ra is not None else _backoff_seconds(attempt_429)
                     now = self._monotonic()
                     if now + wait > deadline_429:
+                        log_integration_http(
+                            integration="azure_devops",
+                            method=m,
+                            url=url,
+                            status_code=429,
+                            duration_ms=elapsed_ms,
+                            sync_run_id=get_sync_run_id(),
+                            error="rate limit (429); retry budget exhausted",
+                        )
                         raise AzureDevOpsRateLimitError(
                             "Azure DevOps API rate limit (429); retry budget exhausted",
                             status_code=429,
@@ -201,21 +220,71 @@ class WorkItemsClient:
                     self._sleep(_backoff_seconds(attempt_get_recovery))
                     attempt_get_recovery += 1
                     continue
+                log_integration_http(
+                    integration="azure_devops",
+                    method=m,
+                    url=url,
+                    status_code=code,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                )
                 self._raise_http(exc)
             except URLError as exc:
                 if not mutating and attempt_get_recovery < MAX_GET_EXTRA_RETRIES:
                     self._sleep(_backoff_seconds(attempt_get_recovery))
                     attempt_get_recovery += 1
                     continue
+                elapsed_ms = (self._monotonic() - start) * 1000.0
+                log_integration_http(
+                    integration="azure_devops",
+                    method=m,
+                    url=url,
+                    status_code=None,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error=str(exc.reason or exc),
+                )
                 raise AzureDevOpsTransportError(str(exc.reason or exc)) from exc
             except OSError as exc:
                 if not mutating and attempt_get_recovery < MAX_GET_EXTRA_RETRIES:
                     self._sleep(_backoff_seconds(attempt_get_recovery))
                     attempt_get_recovery += 1
                     continue
+                elapsed_ms = (self._monotonic() - start) * 1000.0
+                log_integration_http(
+                    integration="azure_devops",
+                    method=m,
+                    url=url,
+                    status_code=None,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error=str(exc),
+                )
                 raise AzureDevOpsTransportError(str(exc)) from exc
 
-            return self._read_json_response(raw_body)
+            elapsed_ms = (self._monotonic() - start) * 1000.0
+            try:
+                doc = self._read_json_response(raw_body)
+            except AzureDevOpsClientError as exc:
+                log_integration_http(
+                    integration="azure_devops",
+                    method=m,
+                    url=url,
+                    status_code=status,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error=str(exc),
+                )
+                raise
+            log_integration_http(
+                integration="azure_devops",
+                method=m,
+                url=url,
+                status_code=status,
+                duration_ms=elapsed_ms,
+                sync_run_id=get_sync_run_id(),
+            )
+            return doc
 
     def create_work_item(
         self,

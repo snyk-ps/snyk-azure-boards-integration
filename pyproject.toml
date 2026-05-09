@@ -23,6 +23,7 @@ packages = [
     "src/config",
     "src/mapping_store",
     "src/integrations",
+    "src/observability",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -33,6 +34,7 @@ include = [
     "src/config",
     "src/mapping_store",
     "src/integrations",
+    "src/observability",
     "src/main.py",
     "scripts",
 ]

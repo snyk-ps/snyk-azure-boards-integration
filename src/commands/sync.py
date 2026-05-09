@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 
 from config import ConfigError, load_app_config
-from integrations.azure_devops.constants import AZURE_DEVOPS_PAT_ENV
 from integrations.azure_devops.client import WorkItemsClient
+from integrations.azure_devops.constants import AZURE_DEVOPS_PAT_ENV
 from mapping_store import create_mapping_store
+from observability.cli_logging import configure_cli_logging
 from snyk.client import IssuesClient
 from sync.run import run_sync
 
@@ -57,7 +57,7 @@ def run_sync_command(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    configure_cli_logging()
     try:
         store = create_mapping_store(config)
         issues_client = IssuesClient()

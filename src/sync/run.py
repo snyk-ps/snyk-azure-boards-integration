@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from typing import Any, Mapping
 from urllib.parse import quote
 
@@ -10,6 +12,8 @@ from config.models import REOPEN_POLICY_REOPEN_EXISTING, AppConfig, AzureBoardsC
 from integrations.azure_devops.client import WorkItemsClient
 from integrations.azure_devops.errors import AzureDevOpsClientError
 from mapping_store.protocol import MappingRow, MappingStore
+from observability.integration_audit import log_sync_summary
+from observability.sync_context import reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 
 from sync.azure_batch import batch_get_work_items
@@ -119,6 +123,7 @@ def run_sync(
     wit_client: WorkItemsClient,
     store: MappingStore,
     logger: logging.Logger | None = None,
+    sync_run_id: str | None = None,
 ) -> int:
     """
     Execute one synchronization loop.
@@ -131,8 +136,45 @@ def run_sync(
 
     """
     log = logger or LOGGER
-    validate_sync_environment()
-    validate_sync_config(config)
+    rid = sync_run_id if sync_run_id is not None else str(uuid.uuid4())
+    token = set_sync_run_id(rid)
+    t0 = time.perf_counter()
+    outcome = "failure"
+    err_short = ""
+    try:
+        validate_sync_environment()
+        validate_sync_config(config)
+        rc = _run_sync_body(
+            config=config,
+            issues_client=issues_client,
+            wit_client=wit_client,
+            store=store,
+            log=log,
+        )
+        outcome = "success"
+        return rc
+    except BaseException as exc:
+        err_short = f"{type(exc).__name__}: {exc!s}"[:500]
+        raise
+    finally:
+        reset_sync_run_id(token)
+        log_sync_summary(
+            sync_run_id=rid,
+            sync_duration_seconds=time.perf_counter() - t0,
+            sync_outcome=outcome,
+            error=err_short,
+        )
+
+
+def _run_sync_body(
+    *,
+    config: AppConfig,
+    issues_client: IssuesClient,
+    wit_client: WorkItemsClient,
+    store: MappingStore,
+    log: logging.Logger,
+) -> int:
+    """Core sync loop after environment validation (no sync_run_id wrapper)."""
     ab = config.azure_boards
 
     if ab.org_mappings:

@@ -381,7 +381,45 @@ How to run tests (for example `uv run pytest`). Add test runners and tools as de
 
 ## Error Handling/Logging
 
-How errors and logs behave, where logs go, and JSON log format if applicable.
+The **`sync`** command configures the root logger with **UTC** timestamps (ISO-8601 `asctime`, `Z` suffix).
+
+Structured **JSON** audit events are emitted on the logger named **`integration_audit`**:
+
+| `event` | Meaning |
+|--------|---------|
+| **`integration_http`** | One line per terminal Snyk or Azure DevOps HTTP outcome after client retry policy. Fields include `integration` (`snyk` or `azure_devops`), `method`, `http_status`, `duration_ms`, `safe_target` (scheme/host/path only—no `Authorization`), optional `sync_run_id`, and on **401**/**403** an `error` containing **`Authentication Failed`**. |
+| **`sync_summary`** | One line per **`sync`** invocation: `sync_run_id`, `sync_duration_seconds`, `sync_outcome` (`success` or `failure`), and `error` only on failure. |
+
+In **Azure Monitor** / **Log Analytics**, container stdout often lands in **`ContainerAppConsoleLogs_CL`** (exact table names depend on the workspace and data collection rule). Each stdout line looks like ``UTC-timestamp LEVEL logger-name {JSON}`` — the trailing **`{JSON}`** is a single object with fields such as **`event`**, **`sync_duration_seconds`**, **`integration_http`**, etc. Use **`Log_s` contains** filters on stable substrings, or extract the JSON object before **`parse_json`** if your pipeline stores only structured JSON per row.
+
+### Alerting runbook (portal; no IaC in this repo)
+
+1. **Action Group** — In Azure Portal, create an [Action Group](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/action-groups) with email, SMS, or webhook for on-call.
+2. **Log-based alert** — Create a **scheduled query** or **log search** alert on the workspace receiving container logs.
+3. **Latency (starting threshold 300 seconds)** — Alert when a sync run is slow, for example when `sync_duration_seconds` exceeds **300** (tune for your schedule and data volume). Example Kusto pattern (adapt table/column names to your workspace):
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where Log_s has "sync_summary" and Log_s has "\"sync_outcome\":\"success\""
+| extend j = parse_json(tostring(split(Log_s, "integration_audit ")[1]))
+| where todouble(j.sync_duration_seconds) > 300
+| project TimeGenerated, j.sync_run_id, j.sync_duration_seconds
+```
+
+If `split`/`parse_json` is awkward for your exact `Log_s` shape, use **`Log_s contains "sync_duration_seconds"`** with a **regular expression** or a **workspace transform** to promote JSON fields.
+
+4. **Repeated authentication failures** — Alert when **`Authentication Failed`** appears in `integration_http` events (for example more than **3** times in **10** minutes):
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where Log_s has "integration_http" and Log_s has "Authentication Failed"
+| summarize cnt=count() by bin(TimeGenerated, 10m)
+| where cnt > 3
+```
+
+5. **Stale sync (optional)** — If you expect a run at least every interval **T**, alert when there is **no** successful `sync_summary` within **N×T** (for example **N = 2**). Replace the time window and `ContainerAppConsoleLogs_CL` filter to match your deployment.
+
+**Terraform / Bicep / ARM** for alert definitions are **not** required artifacts of this repository; operators may add them externally if desired.
 
 ## Troubleshooting
 

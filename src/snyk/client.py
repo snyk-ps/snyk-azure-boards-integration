@@ -28,6 +28,8 @@ from snyk.errors import (
     SnykServerError,
     SnykTransportError,
 )
+from observability.integration_audit import log_integration_http
+from observability.sync_context import get_sync_run_id
 from snyk.parser import (
     IssuesListPage,
     build_included_index,
@@ -137,17 +139,34 @@ class IssuesClient:
         """GET JSON document; retry on HTTP 429 with bounded backoff."""
         deadline = self._monotonic() + self._rate_limit_max_wait_seconds
         attempt_429 = 0
+        start = self._monotonic()
+        method = "GET"
         while True:
-            req = Request(url, headers=self._request_headers(), method="GET")
+            req = Request(url, headers=self._request_headers(), method=method)
             try:
                 with self._opener(req, timeout=self._timeout) as resp:
                     body = resp.read()
+                    raw_status = getattr(resp, "status", None)
+                    if raw_status is None:
+                        raw_status = getattr(resp, "code", None)
+                    status = int(raw_status) if raw_status is not None else 200
             except HTTPError as exc:
-                if exc.code == 429:
+                code = int(exc.code)
+                elapsed_ms = (self._monotonic() - start) * 1000.0
+                if code == 429:
                     ra = _parse_retry_after_seconds(getattr(exc, "headers", None))
                     wait = ra if ra is not None else _backoff_seconds(attempt_429)
                     now = self._monotonic()
                     if now + wait > deadline:
+                        log_integration_http(
+                            integration="snyk",
+                            method=method,
+                            url=url,
+                            status_code=429,
+                            duration_ms=elapsed_ms,
+                            sync_run_id=get_sync_run_id(),
+                            error="rate limit (429); retry budget exhausted",
+                        )
                         raise SnykRateLimitError(
                             "Snyk API rate limit (429); retry budget exhausted",
                             status_code=429,
@@ -155,16 +174,62 @@ class IssuesClient:
                     self._sleep(wait)
                     attempt_429 += 1
                     continue
+                log_integration_http(
+                    integration="snyk",
+                    method=method,
+                    url=url,
+                    status_code=code,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                )
                 self._raise_http_error(exc)
             except URLError as exc:
+                elapsed_ms = (self._monotonic() - start) * 1000.0
+                log_integration_http(
+                    integration="snyk",
+                    method=method,
+                    url=url,
+                    status_code=None,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error=str(exc.reason or exc),
+                )
                 raise SnykTransportError(str(exc.reason or exc)) from exc
             except OSError as exc:
+                elapsed_ms = (self._monotonic() - start) * 1000.0
+                log_integration_http(
+                    integration="snyk",
+                    method=method,
+                    url=url,
+                    status_code=None,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error=str(exc),
+                )
                 raise SnykTransportError(str(exc)) from exc
 
+            elapsed_ms = (self._monotonic() - start) * 1000.0
             try:
                 parsed: dict[str, Any] = json.loads(body.decode("utf-8"))
             except json.JSONDecodeError as exc:
+                log_integration_http(
+                    integration="snyk",
+                    method=method,
+                    url=url,
+                    status_code=status,
+                    duration_ms=elapsed_ms,
+                    sync_run_id=get_sync_run_id(),
+                    error="Response was not valid JSON",
+                )
                 raise SnykClientError("Response was not valid JSON", status_code=None) from exc
+            log_integration_http(
+                integration="snyk",
+                method=method,
+                url=url,
+                status_code=status,
+                duration_ms=elapsed_ms,
+                sync_run_id=get_sync_run_id(),
+            )
             return parsed
 
     def _raise_http_error(self, exc: HTTPError) -> None:

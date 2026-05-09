@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -106,3 +108,104 @@ def test_run_sync_uses_group_iterator_when_no_mappings(
     assert rc == 0
     iter_group.assert_called_once()
     iter_org.assert_not_called()
+
+
+def test_run_sync_emits_sync_summary_json(
+    tmp_path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+
+    def opener(*_a, **_k):
+        from tests.test_client import _FakeResp
+
+        return _FakeResp(b'{"data":[],"links":{}}')
+
+    monkeypatch.setattr(issues, "_opener", opener)
+    monkeypatch.setattr(
+        "sync.run.batch_get_work_items",
+        lambda *a, **k: {},
+    )
+
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            organization="o",
+            project="p",
+        ),
+        work_item_template={},
+        snyk=SnykConfig(group_id="group-uuid"),
+    )
+    with caplog.at_level(logging.INFO, logger="integration_audit"):
+        rc = run_sync(
+            config=cfg,
+            issues_client=issues,
+            wit_client=wit,
+            store=store,
+            sync_run_id="fixed-sync-run",
+        )
+    assert rc == 0
+    summaries = [
+        json.loads(r.message)
+        for r in caplog.records
+        if r.name == "integration_audit" and "sync_summary" in r.message
+    ]
+    assert len(summaries) == 1
+    assert summaries[0]["sync_run_id"] == "fixed-sync-run"
+    assert summaries[0]["sync_outcome"] == "success"
+    assert "sync_duration_seconds" in summaries[0]
+
+
+def test_run_sync_http_audits_share_sync_run_id(
+    tmp_path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+
+    def opener(*_a, **_k):
+        from tests.test_client import _FakeResp
+
+        return _FakeResp(b'{"data":[],"links":{}}')
+
+    monkeypatch.setattr(issues, "_opener", opener)
+    monkeypatch.setattr(
+        "sync.run.batch_get_work_items",
+        lambda *a, **k: {},
+    )
+
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            organization="o",
+            project="p",
+        ),
+        work_item_template={},
+        snyk=SnykConfig(group_id="group-uuid"),
+    )
+    with caplog.at_level(logging.INFO, logger="integration_audit"):
+        run_sync(
+            config=cfg,
+            issues_client=issues,
+            wit_client=wit,
+            store=store,
+            sync_run_id="corr-1",
+        )
+    payloads = [
+        json.loads(r.message)
+        for r in caplog.records
+        if r.name == "integration_audit"
+    ]
+    http = [p for p in payloads if p.get("event") == "integration_http"]
+    assert http, "expected at least one Snyk list HTTP audit"
+    for h in http:
+        assert h.get("sync_run_id") == "corr-1"
+    summ = [p for p in payloads if p.get("event") == "sync_summary"][0]
+    assert summ["sync_run_id"] == "corr-1"

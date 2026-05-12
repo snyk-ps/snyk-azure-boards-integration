@@ -12,6 +12,7 @@ import pytest
 
 from config.models import AppConfig, AzureBoardsConfig, DEFAULT_SQLITE_PATH, SnykConfig
 from mapping_store import (
+    AzureTableMappingStore,
     AzureTableMappingStoreUnavailableError,
     SqliteMappingStore,
     apply_mapping_schema,
@@ -156,16 +157,44 @@ def test_create_mapping_store_sqlite(tmp_path: Path) -> None:
     assert isinstance(store, SqliteMappingStore)
 
 
-def test_create_mapping_store_azure_table_raises() -> None:
+def test_create_mapping_store_azure_table_with_mocked_service() -> None:
+    from unittest.mock import MagicMock, patch
+
     cfg = AppConfig(
         azure_boards=AzureBoardsConfig(),
         work_item_template={},
         snyk=SnykConfig(),
         mapping_store="azure_table",
         sqlite_path=DEFAULT_SQLITE_PATH,
+        mapping_store_azure_table_endpoint="https://acct.table.core.windows.net",
+        mapping_store_azure_table_name="IssueSyncMap",
     )
-    with pytest.raises(AzureTableMappingStoreUnavailableError, match="mapping_store"):
-        create_mapping_store(cfg)
+    with patch("mapping_store.azure_table_store.TableServiceClient") as mock_tsc:
+        mock_svc = MagicMock()
+        mock_tsc.return_value = mock_svc
+        mock_client = MagicMock()
+        mock_svc.get_table_client.return_value = mock_client
+        store = create_mapping_store(cfg)
+        assert isinstance(store, AzureTableMappingStore)
+        mock_svc.create_table_if_not_exists.assert_called_once_with(table_name="IssueSyncMap")
+
+
+def test_create_mapping_store_azure_table_init_failure_raises() -> None:
+    from unittest.mock import MagicMock, patch
+
+    cfg = AppConfig(
+        azure_boards=AzureBoardsConfig(),
+        work_item_template={},
+        snyk=SnykConfig(),
+        mapping_store="azure_table",
+        sqlite_path=DEFAULT_SQLITE_PATH,
+        mapping_store_azure_table_endpoint="https://acct.table.core.windows.net",
+        mapping_store_azure_table_name="IssueSyncMap",
+    )
+    with patch("mapping_store.azure_table_store.TableServiceClient") as mock_tsc:
+        mock_tsc.side_effect = RuntimeError("network down")
+        with pytest.raises(AzureTableMappingStoreUnavailableError, match="mapping_store"):
+            create_mapping_store(cfg)
 
 
 def test_init_script_runs_twice_zero_exit(tmp_path: Path) -> None:

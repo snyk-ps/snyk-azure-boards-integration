@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from config.models import AppConfig
 
+from mapping_store.azure_table_store import AzureTableMappingStore
 from mapping_store.errors import AzureTableMappingStoreUnavailableError
 from mapping_store.protocol import MappingStore
 from mapping_store.sqlite_store import SqliteMappingStore
@@ -13,15 +14,16 @@ def create_mapping_store(config: AppConfig) -> MappingStore:
     """
     Return the mapping persistence implementation for ``config``.
 
-    ``azure_table`` is reserved: there is no adapter in this codebase yet, so this
-    raises ``AzureTableMappingStoreUnavailableError`` (callers should exit non-zero).
+    When ``mapping_store`` is ``azure_table``, builds :class:`AzureTableMappingStore`
+    using ``config.mapping_store_azure_table_endpoint`` and
+    ``config.mapping_store_azure_table_name``. Raises
+    ``AzureTableMappingStoreUnavailableError`` if the Table client cannot be
+    initialized (callers should exit non-zero). There is no fallback to SQLite.
     """
     if config.mapping_store == "azure_table":
-        raise AzureTableMappingStoreUnavailableError(
-            "mapping_store is 'azure_table' but the Azure Table Storage adapter is "
-            "not available in this version. Use mapping_store 'sqlite' for local "
-            "development and tests, or deploy a build that includes the Azure adapter "
-            "when it exists.",
+        return AzureTableMappingStore(
+            endpoint=config.mapping_store_azure_table_endpoint,
+            table_name=config.mapping_store_azure_table_name,
         )
     if config.mapping_store != "sqlite":
         raise AzureTableMappingStoreUnavailableError(

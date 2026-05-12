@@ -409,3 +409,82 @@ def test_defaults_work_item_description_appendix_rejects_non_string(
     )
     with pytest.raises(ConfigError, match="work_item_description_appendix must be a string"):
         load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_mapping_store_azure_table_requires_endpoint(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_name: mytable\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="MAPPING_STORE_AZURE_TABLE_ENDPOINT"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_mapping_store_azure_table_requires_table_name(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_endpoint: https://acct.table.core.windows.net\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="MAPPING_STORE_AZURE_TABLE_NAME"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_mapping_store_azure_table_endpoint_must_be_https(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_endpoint: http://acct.table.core.windows.net\n"
+        "mapping_store_azure_table_name: mytable\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="https://"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_mapping_store_azure_table_name_must_match_azure_rules(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_endpoint: https://acct.table.core.windows.net\n"
+        "mapping_store_azure_table_name: no\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="MAPPING_STORE_AZURE_TABLE_NAME"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_mapping_store_azure_table_ok_from_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_endpoint: https://acct.table.core.windows.net\n"
+        "mapping_store_azure_table_name: IssueSyncMap\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.mapping_store == "azure_table"
+    assert c.mapping_store_azure_table_endpoint == "https://acct.table.core.windows.net"
+    assert c.mapping_store_azure_table_name == "IssueSyncMap"
+
+
+def test_mapping_store_azure_table_env_override_yaml_endpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "mapping_store: azure_table\n"
+        "mapping_store_azure_table_endpoint: https://from-yaml.table.core.windows.net\n"
+        "mapping_store_azure_table_name: IssueSyncMap\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "MAPPING_STORE_AZURE_TABLE_ENDPOINT",
+        "https://from-env.table.core.windows.net",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.mapping_store_azure_table_endpoint == "https://from-env.table.core.windows.net"

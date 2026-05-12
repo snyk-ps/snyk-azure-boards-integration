@@ -1,5 +1,6 @@
-"""Snyk↔work-item mapping persistence (SQLite dev/test; Azure Table later)."""
+"""Snyk↔work-item mapping persistence (SQLite dev/test; Azure Table production)."""
 
+from mapping_store.azure_table_store import AzureTableMappingStore
 from mapping_store.errors import (
     AzureTableMappingStoreUnavailableError,
     MappingDuplicateKeyError,
@@ -11,6 +12,7 @@ from mapping_store.schema import ISSUE_WORK_ITEM_MAP_TABLE, apply_mapping_schema
 from mapping_store.sqlite_store import SqliteMappingStore
 
 __all__ = [
+    "AzureTableMappingStore",
     "AzureTableMappingStoreUnavailableError",
     "ISSUE_WORK_ITEM_MAP_TABLE",
     "MappingDuplicateKeyError",

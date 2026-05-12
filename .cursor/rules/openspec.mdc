@@ -45,9 +45,32 @@ After all tasks are complete and the user confirms:
 /openspec:archive
 ```
 
+## Canonical specs vs change deltas (critical)
+
+**`openspec/specs/`** is the merged, canonical source of truth **after** a change is archived.
+
+- During proposal generation and implementation, requirement deltas live **only** under
+  **`openspec/changes/<change-name>/specs/`**. Do **not** edit or merge those files into
+  **`openspec/specs/`** by hand while the change is active.
+- Promotion into **`openspec/specs/`** happens **only** via **`openspec archive <change-name>`**
+  (or the workflow your repo documents as equivalent).
+
+## tasks.md — required final step
+
+Every **`tasks.md`** created for a change MUST include a **final** checklist item (or small final section)
+that states explicitly:
+
+- **[ ]** Merge **`openspec/specs/`** only when archiving: do **not** copy or merge
+  **`openspec/changes/<change-name>/specs/*.md`** into **`openspec/specs/`** during implementation;
+  run **`openspec archive <change-name>`** (or project equivalent) to fold deltas into canonical specs.
+
+Agents implementing **`tasks.md`** MUST leave that step **unchecked** until the human archives the change.
+
 ## Hard Rules
 - DO NOT write code for a feature that has no corresponding entry in `openspec/changes/`
 - DO NOT implement more than what is defined in `tasks.md`
+- DO NOT manually merge an active change's spec deltas into **`openspec/specs/`** before archive;
+  **`openspec archive`** (or documented equivalent) is the only promotion path
 - If a user asks you to "just code it quickly", remind them of the OpenSpec
   workflow and offer to create a fast proposal first
 - Always check `openspec/specs/` for existing specs before proposing — the

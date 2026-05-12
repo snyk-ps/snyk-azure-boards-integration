@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -29,6 +30,7 @@ from config.policy_parse import (
 from config.snyk_origins import parse_sync_included_snyk_origins
 
 _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
+_AZURE_TABLE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9]{2,62}")
 
 _ENV_CONFIG_PATH = "SNYK_APP_CONFIG"
 _ENV_GROUP_ID = "SNYK_GROUP_ID"
@@ -37,6 +39,8 @@ _ENV_AZURE_BOARDS_ORGANIZATION = "AZURE_BOARDS_ORGANIZATION"
 _ENV_AZURE_BOARDS_PROJECT = "AZURE_BOARDS_PROJECT"
 _ENV_MAPPING_STORE = "MAPPING_STORE"
 _ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
+_ENV_AZURE_TABLE_ENDPOINT = "MAPPING_STORE_AZURE_TABLE_ENDPOINT"
+_ENV_AZURE_TABLE_NAME = "MAPPING_STORE_AZURE_TABLE_NAME"
 
 
 _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
@@ -78,6 +82,8 @@ def _default_tree() -> dict[str, Any]:
         "snyk": {"group_id": ""},
         "mapping_store": DEFAULT_MAPPING_STORE,
         "sqlite_path": DEFAULT_SQLITE_PATH,
+        "mapping_store_azure_table_endpoint": "",
+        "mapping_store_azure_table_name": "",
     }
 
 
@@ -102,6 +108,39 @@ def _normalize_mapping_store(raw: str) -> str:
             f"mapping_store must be one of: {allowed} (got {raw!r})",
         )
     return s
+
+
+def _validate_azure_table_mapping_store_settings(
+    *,
+    mapping_store: str,
+    endpoint: str,
+    table_name: str,
+) -> None:
+    """Require Table endpoint and table name when ``mapping_store`` is ``azure_table``."""
+    if mapping_store != "azure_table":
+        return
+    ep = endpoint.strip()
+    if not ep:
+        raise ConfigError(
+            "mapping_store is 'azure_table' but MAPPING_STORE_AZURE_TABLE_ENDPOINT "
+            "is missing or empty after configuration merge",
+        )
+    if not ep.lower().startswith("https://"):
+        raise ConfigError(
+            "MAPPING_STORE_AZURE_TABLE_ENDPOINT must be an https:// URL "
+            "(non-secret Table service endpoint)",
+        )
+    tn = table_name.strip()
+    if not tn:
+        raise ConfigError(
+            "mapping_store is 'azure_table' but MAPPING_STORE_AZURE_TABLE_NAME "
+            "is missing or empty after configuration merge",
+        )
+    if _AZURE_TABLE_NAME_RE.fullmatch(tn) is None:
+        raise ConfigError(
+            "MAPPING_STORE_AZURE_TABLE_NAME must be 3–63 characters, alphanumeric, "
+            "starting with a letter (Azure Table naming rules)",
+        )
 
 
 def parse_yaml_bytes(data: bytes, *, source: str = "YAML") -> dict[str, Any]:
@@ -199,6 +238,16 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
         sp = os.environ[_ENV_SQLITE_PATH].strip()
         if sp:
             tree["sqlite_path"] = sp
+
+    if _ENV_AZURE_TABLE_ENDPOINT in os.environ:
+        ep = os.environ[_ENV_AZURE_TABLE_ENDPOINT].strip()
+        if ep:
+            tree["mapping_store_azure_table_endpoint"] = ep
+
+    if _ENV_AZURE_TABLE_NAME in os.environ:
+        tn = os.environ[_ENV_AZURE_TABLE_NAME].strip()
+        if tn:
+            tree["mapping_store_azure_table_name"] = tn
 
 
 def _reject_deprecated_flat_work_item_keys(ab_raw: dict[str, Any]) -> None:
@@ -455,6 +504,17 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     else:
         sqlite_path = str(sp_raw).strip()
 
+    at_ep_raw = tree.get("mapping_store_azure_table_endpoint", "") or ""
+    at_name_raw = tree.get("mapping_store_azure_table_name", "") or ""
+    azure_ep = str(at_ep_raw).strip()
+    azure_name = str(at_name_raw).strip()
+
+    _validate_azure_table_mapping_store_settings(
+        mapping_store=mapping_store,
+        endpoint=azure_ep,
+        table_name=azure_name,
+    )
+
     return AppConfig(
         azure_boards=flat,
         work_item_template=dict(wit),
@@ -464,6 +524,8 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         ),
         mapping_store=mapping_store,
         sqlite_path=sqlite_path,
+        mapping_store_azure_table_endpoint=azure_ep,
+        mapping_store_azure_table_name=azure_name,
     )
 
 

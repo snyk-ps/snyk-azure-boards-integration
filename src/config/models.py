@@ -83,3 +83,7 @@ class AppConfig:
     snyk: SnykConfig
     mapping_store: str = DEFAULT_MAPPING_STORE
     sqlite_path: str = DEFAULT_SQLITE_PATH
+    #: HTTPS Table service endpoint when ``mapping_store`` is ``azure_table`` (non-secret).
+    mapping_store_azure_table_endpoint: str = ""
+    #: Table name when ``mapping_store`` is ``azure_table`` (non-secret).
+    mapping_store_azure_table_name: str = ""

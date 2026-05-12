@@ -220,8 +220,10 @@ Top-level keys:
 | `azure_boards` | **`defaults`** holds routing (`organization`, `project`), **`create_new_work_items`** (boolean, default `true` — **P2-FR-11**), **`severity_threshold`** (`low` \| `medium` \| `high` \| `critical`), optional **`sync_included_snyk_origins`** (comma-separated **inclusive** list of Snyk project [origin](https://docs.snyk.io/snyk-platform-administration/snyk-projects#origin) tokens — omit or leave empty to sync all origins; see **Acceptable `sync_included_snyk_origins` values** below), **`issues_sync_from`** (`historical` or an ISO-8601 timestamp), **`create_only_when_fix_available`**, **`reopen_work_item_policy`** (`new_work_item` \| `reopen_existing`), **`work_item_type`**, **`work_item_state_*`**, optional **`work_item_description_appendix`** (plain text appended after the auto-generated **`System.Description`** body; multiline YAML `|` supported), and optional **`work_item_template`**. Do **not** set routing, severity, or `work_item_*` keys as direct children of **`azure_boards`** — the loader rejects legacy flat keys. **`org_mappings`** is an optional list of `{ organization, project, snyk_org_id, snyk_org_slug, overrides? }` for multi-target sync; each row **`snyk_org_slug`** identifies that Snyk org in **`app.snyk.io`** URLs (**required** per row). Optional **`overrides`** partially replace **`defaults`** (including **`work_item_description_appendix`** and **`sync_included_snyk_origins`** per mapping). After load, merged values are also available on **`azure_boards`** top-level fields for convenience in code paths that expect a flat view. |
 | `work_item_template` | Optional `tags` (list of strings) and `json_patch` (JSON Patch ops) applied on **`sync`** create/update; may be `{}`. Merged with `azure_boards.defaults.work_item_template`, then per-mapping `overrides.work_item_template` (`json_patch` lists concatenate in that order). Assignee: use `json_patch` with path `/fields/System.AssignedTo` (Azure DevOps identity format). **Managed tags:** on each Boards create/update, **`sync`** also sets severity and finding-type tags from the current issue (see **Work item tags** below); your configured tags remain in the union. |
 | `snyk` | `group_id` (string; required for group-scoped **`fetch`** / **`sync`** unless **`azure_boards.org_mappings`** defines at least one mapping). **`snyk.severity_threshold` is not supported** — use **`azure_boards.defaults.severity_threshold`**. Do **not** put **`snyk_org_slug`** here — use **`azure_boards.org_mappings[].snyk_org_slug`** only. |
-| `mapping_store` | Where **issues sync persistence** (Snyk issue state and optional Azure Boards work item link) is stored: `sqlite` (local dev/tests) or reserved `azure_table` (production-style; not implemented in this repo yet). Default: `sqlite`. |
-| `sqlite_path` | Filesystem path to the SQLite file when `mapping_store` is `sqlite`. Default: `data/mapping_store.sqlite`. **Do not put secrets** (tokens, PATs) in this path or database file — use environment / Key Vault only. |
+| `mapping_store` | Where **issues sync persistence** (Snyk issue state and optional Azure Boards work item link) is stored: **`sqlite`** (local dev/tests) or **`azure_table`** (Azure Table Storage using **`DefaultAzureCredential`**). Default: **`sqlite`**. |
+| `sqlite_path` | Filesystem path to the SQLite file when **`mapping_store`** is **`sqlite`**. Ignored for **`azure_table`**. Default: `data/mapping_store.sqlite`. **Do not put secrets** (tokens, PATs) in this path or database file — use environment / Key Vault only. |
+| `mapping_store_azure_table_endpoint` | HTTPS Table service URL (for example `https://<account>.table.core.windows.net`). Required when **`mapping_store`** is **`azure_table`** (YAML or **`MAPPING_STORE_AZURE_TABLE_ENDPOINT`**). Non-secret. |
+| `mapping_store_azure_table_name` | Azure Table name (3–63 alphanumeric characters starting with a letter). Required when **`mapping_store`** is **`azure_table`** (YAML or **`MAPPING_STORE_AZURE_TABLE_NAME`**). Non-secret. |
 
 Sections may be omitted where **defaults** apply; a full example is in **`data/sample-config.yaml`** (tracked in git).
 
@@ -268,6 +270,8 @@ Sections may be omitted where **defaults** apply; a full example is in **`data/s
 | `AZURE_DEVOPS_PAT` | **Secret:** Azure DevOps personal access token (not read from YAML or CLI flags). |
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
+| `MAPPING_STORE_AZURE_TABLE_ENDPOINT` | Overrides **`mapping_store_azure_table_endpoint`** when **`mapping_store`** is **`azure_table`** (HTTPS Table service URL; non-secret). |
+| `MAPPING_STORE_AZURE_TABLE_NAME` | Overrides **`mapping_store_azure_table_name`** when **`mapping_store`** is **`azure_table`** (non-secret). |
 | `SNYK_TOKEN` | **Secret:** Snyk API token (not read from YAML). |
 
 ### Azure DevOps personal access token (PAT)
@@ -351,8 +355,10 @@ If both group id and **`--org-id`** are missing after merge, **`fetch`** exits w
 | `azure_boards.defaults.work_item_state_closed` | `Closed` | Boards **`System.State`** when **`sync`** closes on resolved/ignored. |
 | `work_item_template` | `{}` | Optional **`tags`** and **`json_patch`** for **`sync`** (see **`data/sample-config.yaml`**). |
 | `snyk.group_id` | `""` | **Required** for group-scoped **`fetch`** / **`sync`** when **`org_mappings`** is empty — use a real Snyk group UUID. Optional when **`org_mappings`** drives **`sync`**. |
-| `mapping_store` | `sqlite` | Use `sqlite` for local mapping persistence. `azure_table` is reserved; selecting it without a working adapter causes a clear error (no silent fallback to SQLite). |
-| `sqlite_path` | `data/mapping_store.sqlite` | SQLite file path for mappings (non-secret). Do not store tokens or PATs here. |
+| `mapping_store` | `sqlite` | Use **`sqlite`** for local mapping persistence or **`azure_table`** for Azure Table Storage (requires endpoint + table name). There is **no** silent fallback to SQLite when **`azure_table`** is selected. |
+| `sqlite_path` | `data/mapping_store.sqlite` | SQLite file path for mappings when **`mapping_store`** is **`sqlite`** (non-secret). Do not store tokens or PATs here. |
+| `mapping_store_azure_table_endpoint` | `""` | HTTPS Table service URL when **`mapping_store`** is **`azure_table`**. Set via YAML or **`MAPPING_STORE_AZURE_TABLE_ENDPOINT`**. |
+| `mapping_store_azure_table_name` | `""` | Table name when **`mapping_store`** is **`azure_table`**. Set via YAML or **`MAPPING_STORE_AZURE_TABLE_NAME`**. |
 
 Example file (see also **`data/sample-config.yaml`**):
 
@@ -384,7 +390,7 @@ Replace with sample output and what each field means (text, JSON, etc.).
 
 ## Testing
 
-How to run tests (for example `uv run pytest`). Add test runners and tools as dev dependencies in `pyproject.toml` and sync with uv. Point to `tests/` and any coverage expectations.
+Run **`uv run pytest`** from the repository root (tests live under **`tests/`**; **`pythonpath`** includes **`src`** via **`pyproject.toml`**).
 
 ## Error Handling/Logging
 
@@ -434,4 +440,24 @@ Common errors, known issues, FAQ, and debugging tips.
 
 ## Deployment
 
-Where and how you deploy in production: environment variables, secrets, and runtime config. For containers, images built by `release.yml` are published to `ghcr.io` (GitHub Container Registry); pull and run that image in your environment or wire the registry into Kubernetes, ECS, or another orchestrator. Document any registry auth and image tag policy your operators should follow.
+Production often runs this integration as a **scheduled container** on **[Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/overview)** (ACA), using the same **`ghcr.io`** images produced by CI (see `.github/workflows/`). **No Bicep/Terraform** artifacts are required in this repository—provision resources with your preferred tooling.
+
+### Azure-aligned checklist
+
+| Concern | Typical approach |
+| --- | --- |
+| **Operator YAML** | Store non-secret policy YAML on an **[Azure Files](https://learn.microsoft.com/en-us/azure/storage/files/storage-files-introduction)** share and mount it into the container (for example **`/config/app.yaml`**). Pass **`--config`** to that path. **Restart** the revision after YAML edits (hot-reload is not supported). |
+| **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via **[Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/overview)** references as Container Apps **secrets** mapped into **environment variables** — never bake secrets into the image or YAML. |
+| **Managed identity** | Enable a **[managed identity](https://learn.microsoft.com/en-us/azure/container-apps/security-managed-identity)** on the Container App for Azure Table Storage and Files access (**`DefaultAzureCredential`** in the workload). Grant **Table Data Contributor** (or equivalent RBAC) on the storage account used for mappings. |
+| **Mapping store** | Set **`mapping_store: azure_table`** and supply **`mapping_store_azure_table_endpoint`** plus **`mapping_store_azure_table_name`** (YAML and/or **`MAPPING_STORE_AZURE_TABLE_*`** env vars). Values are **non-secret**; authentication uses Entra ID, **not** storage account keys. |
+
+### Where to view logs
+
+The app logs to **stdout/stderr** only; no extra logging configuration is required inside the process.
+
+- **[Log stream](https://learn.microsoft.com/en-us/azure/container-apps/log-streaming)** — In the Azure Portal, open your **Container App → Monitoring → Log stream** for a live tail of container console output when debugging a revision.
+- **Log Analytics / Logs** — Use **Container App → Monitoring → Logs** (or **Azure Monitor → Logs**) against the workspace linked to your ACA environment. Structured **`integration_audit`** lines often appear in tables such as **`ContainerAppConsoleLogs_CL`** (exact names depend on workspace / data collection rules). See **Error Handling/Logging** above for **`sync_summary`** / **`integration_http`** fields and sample Kusto queries.
+
+### Container registry
+
+Authenticate ACA (or another orchestrator) to **`ghcr.io`** so it can pull the package; pin **tags** or **digests** according to your release policy.

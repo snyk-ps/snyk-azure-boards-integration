@@ -5,6 +5,12 @@ from __future__ import annotations
 import html
 from typing import Any, Mapping
 
+from sync.work_item_tags import (
+    combine_tags_for_work_item,
+    managed_severity_tag_from_level,
+    managed_type_tag_from_issue_type,
+)
+
 
 def _ado_system_description_html(plain: str) -> str:
     """
@@ -56,6 +62,22 @@ def _normalize_tags(template: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def _field_tags_from_template_and_issue(
+    template: Mapping[str, Any],
+    *,
+    issue_effective_severity_level: str | None,
+    issue_snyk_type: str | None,
+) -> list[str]:
+    template_tags = _normalize_tags(template)
+    return combine_tags_for_work_item(
+        template_tags,
+        managed_severity_tag=managed_severity_tag_from_level(
+            issue_effective_severity_level,
+        ),
+        managed_type_tag=managed_type_tag_from_issue_type(issue_snyk_type),
+    )
+
+
 def _normalize_json_patch(template: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw = template.get("json_patch")
     if raw is None:
@@ -84,6 +106,8 @@ def build_create_patch(
     description: str,
     active_state: str,
     template: Mapping[str, Any],
+    issue_effective_severity_level: str | None = None,
+    issue_snyk_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     JSON Patch for ``POST`` work item create.
@@ -99,13 +123,17 @@ def build_create_patch(
         },
         {"op": "add", "path": "/fields/System.State", "value": active_state},
     ]
-    tags = _normalize_tags(template)
-    if tags:
+    field_tags = _field_tags_from_template_and_issue(
+        template,
+        issue_effective_severity_level=issue_effective_severity_level,
+        issue_snyk_type=issue_snyk_type,
+    )
+    if field_tags:
         ops.append(
             {
                 "op": "add",
                 "path": "/fields/System.Tags",
-                "value": "; ".join(tags),
+                "value": "; ".join(field_tags),
             },
         )
     ops.extend(_normalize_json_patch(template))
@@ -121,6 +149,8 @@ def build_update_patch(
     description: str,
     state: str,
     template: Mapping[str, Any],
+    issue_effective_severity_level: str | None = None,
+    issue_snyk_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """JSON Patch for ``PATCH`` update (replace built-ins, tags, then template ops)."""
     ops: list[dict[str, Any]] = [
@@ -132,13 +162,17 @@ def build_update_patch(
         },
         {"op": "replace", "path": "/fields/System.State", "value": state},
     ]
-    tags = _normalize_tags(template)
-    if tags:
+    field_tags = _field_tags_from_template_and_issue(
+        template,
+        issue_effective_severity_level=issue_effective_severity_level,
+        issue_snyk_type=issue_snyk_type,
+    )
+    if field_tags:
         ops.append(
             {
                 "op": "replace",
                 "path": "/fields/System.Tags",
-                "value": "; ".join(tags),
+                "value": "; ".join(field_tags),
             },
         )
     ops.extend(_normalize_json_patch(template))

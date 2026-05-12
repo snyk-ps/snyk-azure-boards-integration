@@ -367,6 +367,11 @@ def _sync_one_issue(
     proj_for_url = str(rec.get("project_id") or pid or "").strip()
     sev_raw = attrs.get("effective_severity_level") or rec.get("severity")
     severity = str(sev_raw).strip() if sev_raw is not None else ""
+    severity_level_for_tags = severity if severity else None
+    type_raw = attrs.get("type")
+    issue_snyk_type = str(type_raw).strip() if type_raw is not None else None
+    if issue_snyk_type == "":
+        issue_snyk_type = None
     snyk_pn = str(rec.get("snyk_project_name") or "").strip()
     stored_name = str(row.snyk_project_name if row else "").strip()
     stored_origin = str(row.snyk_project_origin if row else "").strip()
@@ -463,6 +468,8 @@ def _sync_one_issue(
             description=description,
             active_state=ab.work_item_state_active,
             template=template,
+            issue_effective_severity_level=severity_level_for_tags,
+            issue_snyk_type=issue_snyk_type,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -527,6 +534,8 @@ def _sync_one_issue(
                     description=description,
                     state=target_state,
                     template=template,
+                    issue_effective_severity_level=severity_level_for_tags,
+                    issue_snyk_type=issue_snyk_type,
                 )
                 updated = wit_client.update_work_item(
                     ado_org,
@@ -574,6 +583,8 @@ def _sync_one_issue(
             description=description,
             active_state=ab.work_item_state_active,
             template=template,
+            issue_effective_severity_level=severity_level_for_tags,
+            issue_snyk_type=issue_snyk_type,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -642,6 +653,8 @@ def _sync_one_issue(
         description=description,
         state=target_state,
         template=template,
+        issue_effective_severity_level=severity_level_for_tags,
+        issue_snyk_type=issue_snyk_type,
     )
     updated = wit_client.update_work_item(ado_org, ado_proj, wid, patches)
     wst = str(updated.get("work_item_status") or "")

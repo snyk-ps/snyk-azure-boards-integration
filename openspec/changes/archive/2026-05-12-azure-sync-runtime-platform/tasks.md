@@ -29,5 +29,5 @@
 
 ## 6. Spec apply / archive prep
 
-- [ ] 6.1 **Do not** merge change deltas into **`openspec/specs/`** during implementation; that merge happens only when you run **`openspec archive azure-sync-runtime-platform`** (which applies **`openspec/changes/azure-sync-runtime-platform/specs/`** into the canonical specs).
+- [x] 6.1 Merge delta specs into **`openspec/specs/`** at archive: canonical specs were updated manually to match **`specs/`**, then **`openspec archive --skip-specs`** (automated MODIFIED merge reported header mismatch).
 - [x] 6.2 Confirm **`pytest`** passes for the repository **uv** environment.

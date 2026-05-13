@@ -86,7 +86,7 @@ Use a real config and valid secrets; **`sample-config.yaml`** is illustrative on
 
 ### GitHub Actions
 
-1. **`tag.yml`**: on push to **`main`** (when workflows are enabled), Release Please proposes version bumps from conventional commits and **`VERSION`** (`release-type: simple`).
+1. **`tag.yml`**: on push to **`main`** (when workflows are enabled), **Release Please** uses **`release-please-config.json`** and **`.release-please-manifest.json`** (manifest mode) to open/update a release PR that bumps root **`VERSION`** and **`CHANGELOG.md`**.
 2. **`release.yml`**: on tag **`v*.*.*`**, builds **`Dockerfile`**, pushes **`ghcr.io/<owner>/<repo>:<tag>`**, creates a GitHub Release.
 
 If **`.github/template`** is present, those workflows are skipped for template repos. Remove it and add **`VERSION`** for normal product releases.

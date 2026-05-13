@@ -1,4 +1,0 @@
-# While this file exists, Release Please and Docker publish workflows are skipped.
-# Delete it when you create your application from this template and want automated
-# releases and container images. Then add a root VERSION file (one semver line,
-# e.g. 0.1.0) if you use release-type: simple.

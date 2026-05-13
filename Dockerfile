@@ -35,4 +35,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 USER nonroot
 WORKDIR /app
 
-CMD ["python", "src/main.py"]
+# Default: run sync; mount operator YAML at /config/config.yaml (or override CMD args, e.g. fetch …).
+ENTRYPOINT ["python", "src/main.py"]
+CMD ["sync", "--config", "/config/config.yaml"]

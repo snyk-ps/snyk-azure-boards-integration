@@ -1,6 +1,6 @@
 # Configuration reference
 
-Operator reference for YAML policy, environment variables, and CLI commands. For installation, container images, and Azure deployment, see the [README](README.md).
+Operator reference for YAML policy, environment variables, and CLI commands. For installation, container images, and Azure deployment, see the [README](README.md). Release images and tags: **[snyk-azure-boards-integration on GitHub Packages](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)**.
 
 
 Operator settings use a **YAML** file (non-secret policy only). **Secrets** (`SNYK_TOKEN`, Azure DevOps PAT, etc.) **must** come from environment variables or your secret store. **Never** commit them in YAML. The shipped container image **defaults** to **`sync --config /config/config.yaml`**; **`SNYK_APP_CONFIG`** or CLI **`--config`** still follow the precedence below.

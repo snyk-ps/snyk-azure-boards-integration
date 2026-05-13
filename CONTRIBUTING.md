@@ -87,7 +87,7 @@ Use a real config and valid secrets; **`sample-config.yaml`** is illustrative on
 ### GitHub Actions
 
 1. **`tag.yml`**: on push to **`main`** (when workflows are enabled), Release Please proposes version bumps from conventional commits and **`VERSION`** (`release-type: simple`).
-2. **`release.yml`**: on tag **`v*.*.*`**, builds **`Dockerfile`**, pushes **`ghcr.io/<owner>/<repo>:<tag>`**, creates a GitHub Release.
+2. **`release.yml`**: on tag **`v*.*.*`**, builds **`Dockerfile`**, pushes **`ghcr.io/snyk-ps/snyk-azure-boards-integration:<tag>`**, creates a GitHub Release. Published images: **[container package on GitHub](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)**.
 
 If **`.github/template`** is present, those workflows are skipped for template repos. Remove it and add **`VERSION`** for normal product releases.
 

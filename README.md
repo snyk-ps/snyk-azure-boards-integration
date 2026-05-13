@@ -95,7 +95,7 @@ Optional: build and run the root **`Dockerfile`** locally to mirror production; 
 
 Use this path for scheduled sync in a cluster or cloud (recommended for ongoing operations).
 
-1. **Image:** use a build from this repo’s **`Dockerfile`**, or pull a release image from **[GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)** (**`ghcr.io`**). Tags and install/copy hints are on this repository’s **Packages** page on GitHub. Authenticate to the registry for private images; pin **tags** or **digests**. The image **ENTRYPOINT** is **`python src/main.py`**; **default args** are **`sync --config /config/config.yaml`** (mount policy there unless your platform overrides **command** / **args**).
+1. **Image:** use a build from this repo’s **`Dockerfile`**, or pull a release image from **[GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)** (**`ghcr.io`**). **Tags**, digests, and pull/copy hints: **[snyk-azure-boards-integration package on GitHub](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)**. Authenticate to the registry for private images; pin **tags** or **digests**. The image **ENTRYPOINT** is **`python src/main.py`**; **default args** are **`sync --config /config/config.yaml`** (mount policy there unless your platform overrides **command** / **args**).
 
 2. **Secrets:** inject **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via your platform (for example Key Vault references on **Azure Container Apps**), not in the image or YAML.
 
@@ -110,7 +110,7 @@ docker run --rm \
   -e SNYK_TOKEN \
   -e AZURE_DEVOPS_PAT \
   -v /path/on/host/config.yaml:/config/config.yaml:ro \
-  ghcr.io/<owner>/<repo>:<tag>
+  ghcr.io/snyk-ps/snyk-azure-boards-integration:<tag>
 ```
 
 Other CLI subcommands override the default args, for example: **`docker run … <image> fetch list --config /config/config.yaml`**.
@@ -156,7 +156,7 @@ Command-level behavior: **[CONFIGURATION.md](CONFIGURATION.md)** (`sync`, `fetch
 
 This section is the **Azure-oriented runbook** for production: sizing, **Azure Table**, identity, and day-two operations. For the install surface (image, secrets, config, scheduler entrypoint), start with **[Deployment / production installation](#deployment-production-installation)** above.
 
-Production is commonly a **scheduled container** on **[Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/overview)** using images from **`ghcr.io`** (published by this repo’s workflows and listed on the repository **Packages** page). **No Bicep/Terraform** is required in this repo. **Schedule `sync` every 24 hours** unless your risk or change cadence needs a different interval.
+Production is commonly a **scheduled container** on **[Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/overview)** using images from **`ghcr.io`** ([**container package on GitHub**](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)). **No Bicep/Terraform** is required in this repo. **Schedule `sync` every 24 hours** unless your risk or change cadence needs a different interval.
 
 ### Minimum requirements (Azure Container Apps)
 
@@ -197,7 +197,7 @@ Extended notes: **[CONFIGURATION.md](CONFIGURATION.md)** aligns with deployment;
 
 ### Container registry
 
-The image **defaults to** **`sync --config /config/config.yaml`** (see [Deployment / production installation](#deployment-production-installation)). Images are published to **`ghcr.io`** and appear on this repository’s **Packages** page. Authenticate your runtime to **`ghcr.io`**; pin **tags** or **digests**. [Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+The image **defaults to** **`sync --config /config/config.yaml`** (see [Deployment / production installation](#deployment-production-installation)). Images are published to **`ghcr.io`**; see the [**container package page**](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration) for tags and digests. Authenticate your runtime to **`ghcr.io`**; pin **tags** or **digests**. [Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 ## Logs and observability
 
@@ -230,7 +230,7 @@ In **Log Analytics**, parse trailing JSON from **`ContainerAppConsoleLogs_CL`** 
 | **`sync` config errors** | **`snyk.group_id`** set; **`azure_boards.defaults`** structure; **`work_item_type`** and states; **`organization`** / **`project`** or **`org_mappings`** rows. |
 | **Table store startup failure** | Endpoint, table name, network, managed identity, **Storage Table Data Contributor**. |
 | **No new work items** | **`create_new_work_items`**, filters, **`create_only_when_fix_available`**, Snyk data in scope. |
-| **Cannot pull image** | **`ghcr.io`** auth and tag/digest. |
+| **Cannot pull image** | **`ghcr.io`** auth and tag/digest; confirm image name on the [**GitHub container package**](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration). |
 
 ## More documentation
 

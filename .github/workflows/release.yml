@@ -54,6 +54,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.VERSION }}
           file: Dockerfile
+          platforms: linux/amd64,linux/arm64
 
       - name: Create GitHub Release
         uses: actions/create-release@v1

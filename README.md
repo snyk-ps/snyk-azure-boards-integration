@@ -13,6 +13,7 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Deployment](#deployment)
+  - [Azure Container Apps: portal walkthrough (scheduled job)](#azure-container-apps-portal-walkthrough-scheduled-job)
 - [Logs and observability](#logs-and-observability)
 - [Troubleshooting](#troubleshooting)
 - [More documentation](#more-documentation)
@@ -154,7 +155,7 @@ Command-level behavior: **[CONFIGURATION.md](CONFIGURATION.md)** (`sync`, `fetch
 
 ## Deployment
 
-This section is the **Azure-oriented runbook** for production: sizing, **Azure Table**, identity, and day-two operations. For the install surface (image, secrets, config, scheduler entrypoint), start with **[Deployment / production installation](#deployment-production-installation)** above.
+This section is the **Azure-oriented runbook** for production: sizing, **Azure Table**, identity, and the **[portal walkthrough](#azure-container-apps-portal-walkthrough-scheduled-job)** for a **scheduled Container App Job**.
 
 Production is commonly a **scheduled container** on **[Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/overview)** using images from **`ghcr.io`** ([**container package on GitHub**](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)). **No Bicep/Terraform** is required in this repo. **Schedule `sync` every 24 hours** unless your risk or change cadence needs a different interval.
 
@@ -168,6 +169,121 @@ Production is commonly a **scheduled container** on **[Azure Container Apps](htt
 | **Networking** | Outbound **HTTPS** to Snyk, **`dev.azure.com`**, and your Table endpoint if using **`azure_table`**. |
 | **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. |
 | **Identity** | Managed identity on the app when using **Azure Table** with **`DefaultAzureCredential`**. |
+
+### Azure Container Apps: portal walkthrough (scheduled job)
+
+Use a **Container App Job** with a **Schedule** trigger (cron), not a regular HTTP Container App. The steps below follow the [Create a job in the Azure portal](https://learn.microsoft.com/en-us/azure/container-apps/jobs-get-started-portal) flow and this repo’s image default **`sync --config /config/config.yaml`**.
+
+#### A. Prepare config in Azure Storage (do this first)
+
+1. In the portal, open **Storage accounts** → **+ Create**.
+2. **Basics:** pick subscription, resource group, region, a **globally unique** name, **Performance** Standard, **Redundancy** LRS (or per policy). **Kind** StorageV2 is fine.
+3. **Advanced:** ensure **Allow storage account key access** stays **enabled** if you will use the **account key** for the ACA file share link (common for SMB).
+4. Create the account, then open it.
+5. Under **Data storage** → **File shares** → **+ File share:** create a share (e.g. `snyk-boards-config`).
+6. Open the share → **Upload** your **`config.yaml`** (non-secret policy only).  
+   The object in the share must end up as **`config.yaml`** at the **root** of the share so the mounted path **`/config/config.yaml`** is correct.
+7. Under **Security + networking** → **Access keys:** copy **key1** (or **key2**) — you’ll paste it when wiring the environment **Volume mount**.
+
+**Networking:** If the storage account uses a **restricted firewall** or **public network access** disabled, SMB mounts from Container Apps can fail (for example **`VolumeMountFailure`** / **`mount error(13): Permission denied`**). The account must be **reachable** from your Container Apps environment for that file share. See [Use storage mounts in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts).
+
+#### B. Create the Container Apps environment (with file share link)
+
+You can either create the environment **inside** the job wizard (**Basics**) or create it **first** as its own resource. Either way you need one **Container Apps** environment.
+
+1. Portal search: **Container Apps environments** → open your environment (or create it from the job wizard via **Create new**, as in the [portal quickstart](https://learn.microsoft.com/en-us/azure/container-apps/jobs-get-started-portal)).
+2. Open the environment → **Settings** → **Volume mounts** (or **Storage** / **Azure Files**, depending on portal wording).
+3. **Add** a volume mount:
+   - **Protocol:** SMB (default for standard Azure Files).
+   - **Name:** a short logical name you will reuse on the job (e.g. `configshare`). This is the **`storageName` / environment storage name**, not the Azure share name.
+   - **Storage account:** select the account from step **A**.
+   - **File share:** select the share that contains **`config.yaml`**.
+   - **Access key:** paste the key from step **A** (if the UI asks).
+   - **Access mode:** **Read only** is enough if the job only reads config.
+4. **Save** so the environment now lists this Azure Files mount.
+
+#### C. Create the Container App Job (scheduled)
+
+1. Portal top search: **Container App Jobs** → **Create**.
+
+**Basics**
+
+- Subscription, **Resource group**
+- **Container job name:** e.g. `snyk-boards-sync` (must follow ACA naming rules; short name).
+- **Region:** same as the environment (and typically the same as the storage account region).
+- **Container Apps environment:** select the environment from **B** (or **Create new** and match the quickstart: **Workload profiles** / **Consumption** per your org’s standard).
+
+**Job details** (or equivalent step)
+
+- **Trigger type:** **Scheduled**
+- **Cron expression:** use a **five-field** schedule in **UTC** (examples: `0 2 * * *` = daily 02:00 UTC). Adjust to your cadence.
+
+**Container** (main step)
+
+- **Container name:** e.g. `main`
+- **Image source:** **Docker Hub or other registries** (or **Azure Container Registry** if you use ACR).
+- For **`ghcr.io`:** set **registry** to **`ghcr.io`**, image **`snyk-ps/snyk-azure-boards-integration:<tag>`** (pin a real **tag** or **digest**). If the package is **private**, set **registry credentials** / **secret** per portal prompts.
+- **Workload profile:** **Consumption** is usually fine for this sync.
+- **CPU and memory:** e.g. **0.5 CPU**, **1.0 Gi** (matches [minimum requirements](#minimum-requirements-azure-container-apps) above).
+
+**Do not** override **ENTRYPOINT** / **command** unless you know you need to; the image default is already **`sync --config /config/config.yaml`**.
+
+#### D. Secrets and environment variables (portal)
+
+On the job’s container / configuration (wording varies by blade version). The **create** wizard may not expose **Secrets**; if not, open the deployed **Container App Job** → **Settings** → **Secrets**, then reference those secrets from **Environment variables** on the container / template (same idea as [Manage secrets in Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets?tabs=azure-portal)).
+
+**Secrets** (job-level): add at least:
+
+| Secret name | Value |
+| ----------- | ----- |
+| `snyk-token` | Snyk API token |
+| `azure-devops-pat` | Azure DevOps PAT |
+
+**Environment variables** for the container:
+
+| Variable | Source |
+| -------- | ------ |
+| `SNYK_TOKEN` | Reference secret `snyk-token` |
+| `AZURE_DEVOPS_PAT` | Reference secret `azure-devops-pat` |
+
+**Key Vault:** if your org requires it, use the portal options for **Key Vault references** on Container Apps secrets instead of pasting values — same net result: env vars backed by secrets.
+
+#### E. Mount the file share on the job at `/config`
+
+The environment link exists from **B**; the job still needs a **volume + mount** so the file appears as **`/config/config.yaml`**.
+
+1. In the **Container** step (or **Volumes** / **Advanced** on the same wizard), **add a volume:**
+   - **Type:** **Azure Files** (backed by the environment mount you named, e.g. `configshare`).
+2. **Mount** that volume on the main container:
+   - **Mount path:** **`/config`**
+   - No **`subPath`** needed if **`config.yaml`** is at the **root** of the share.
+
+If the **create** wizard does not offer volumes, finish **Create**, then open the job resource → find **Containers** / **Revision** / **Edit** (same idea as **Revisions and replicas** on a normal Container App), add the **Azure Files** volume and **`/config`** mount, then **save** so a new revision applies.
+
+#### F. Optional: Azure Table + managed identity (if YAML uses `azure_table`)
+
+1. On the **Container App Job** resource: **Identity** → turn on **System assigned** (or user-assigned per policy).
+2. On the **Table** storage account: **Access Control (IAM)** → **Add role assignment** → **Storage Table Data Contributor** → assign to the job’s identity.
+3. Ensure **Table endpoint** and **table name** are set in YAML or env as documented (see [Azure Table Storage](#azure-table-storage) below).
+
+#### G. Deploy, test, logs
+
+1. **Review + create** on the job.
+2. Open the job → **Execution history** (or **Executions**) → **Run now** / manual start if offered, to test before waiting for cron.
+3. Open **Log stream** or **Logs** for the latest execution; confirm **`sync_summary`** / **`integration_audit`** lines (see [Logs and observability](#logs-and-observability)).
+
+**Where to click:** **Execution history** → select a run → **View logs**; for longer retention and queries, use **Monitoring** → **Logs** on the **Container Apps environment** or **Log Analytics** (`ContainerAppConsoleLogs_CL`). Details: [Where to view logs](#where-to-view-logs).
+
+**Exit reason:** **`ProcessExited`** with **exit code `0`** means the main process finished successfully — expected for **`sync`** when the run succeeds.
+
+#### H. If something fails
+
+| Issue | What to check |
+| ----- | ------------- |
+| **Missing config** | The share contains **`config.yaml`** and the mount path is exactly **`/config`**. |
+| **Volume mount / Permission denied** | Storage account **firewall** / **public network access**, wrong **access key** on the environment volume, or share path; see **A** (**Networking**) and [Use storage mounts in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts). |
+| **Auth errors** | Secrets and PAT scopes (**Work items: Read & write**). |
+| **Pull image failed** | **`ghcr.io`** visibility and any **registry credentials** on the job. |
 
 ### Azure Table Storage
 

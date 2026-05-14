@@ -182,6 +182,9 @@ data/*.sqlite
 
 # Local configuration files
 data/*.local*
+data/*.csv
+data/*debug*
+
 
 # macOS
 .DS_Store

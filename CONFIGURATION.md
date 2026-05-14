@@ -60,6 +60,14 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 
 When **`org_mappings`** is non-empty, **`sync`** lists issues with the **org**-scoped Snyk API using each row’s **`snyk_org_id`**. Always set **`snyk.group_id`** to your Snyk **Group** UUID: it is the **mapping store namespace** for every row (Azure Table **`PartitionKey`** / SQLite **`group_id`** column). Issue **detail** GETs in this mode use the org API.
 
+### Generating `org_mappings` from a CSV
+
+For many Snyk orgs, you can start from a CSV with columns **`ado_organization`**, **`ado_project`**, and **`snyk_org_name`** (human-readable Snyk org name), then resolve **`snyk_org_id`** and **`snyk_org_slug`** via the Snyk REST [list orgs in group](https://apidocs.snyk.io/?version=2024-03-12#get-/groups/-group_id-/orgs) API. Run (from the repo root, with **`SNYK_TOKEN`** set):
+
+`uv run python scripts/generate_org_mapping_config.py --input path/to/mappings.csv --group-id <your-group-uuid>`
+
+The default output is **`data/config.yaml`** (overwritten if present); use **`--output`** to choose another path. Review the generated **`azure_boards.defaults`** and **`mapping_store`** comments before deploying. Details: **`python scripts/generate_org_mapping_config.py --help`**.
+
 ## work_item_template
 
 Applies at **root** `work_item_template`, under **`azure_boards.defaults.work_item_template`**, and under **`org_mappings[].overrides.work_item_template`**. Merge order: defaults, root template, per-mapping overrides (**`json_patch`** lists concatenate).

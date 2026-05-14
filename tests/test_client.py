@@ -9,6 +9,7 @@ import pytest
 from urllib.error import HTTPError
 from urllib.request import Request
 
+from observability.cli_logging import NdjsonFormatter
 from observability.sync_context import reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 from snyk.constants import SNYK_REST_API_VERSION
@@ -93,14 +94,14 @@ def test_get_org_issue_emits_integration_audit_json(caplog: pytest.LogCaptureFix
     client = IssuesClient(token="t", opener=opener)
     with caplog.at_level(logging.INFO, logger="integration_audit"):
         client.get_org_issue(oid, issue)
-    audit_msgs = [r.message for r in caplog.records if r.name == "integration_audit"]
-    assert len(audit_msgs) == 1
-    row = json.loads(audit_msgs[0])
+    audit_recs = [r for r in caplog.records if r.name == "integration_audit"]
+    assert len(audit_recs) == 1
+    row = audit_recs[0].record
     assert row["event"] == "integration_http"
     assert row["integration"] == "snyk"
     assert row["http_status"] == 200
     assert row["method"] == "GET"
-    assert "secret" not in audit_msgs[0].lower()
+    assert "secret" not in json.dumps(row).lower()
 
 
 def test_get_org_issue_audit_includes_sync_run_id(caplog: pytest.LogCaptureFixture) -> None:
@@ -117,9 +118,7 @@ def test_get_org_issue_audit_includes_sync_run_id(caplog: pytest.LogCaptureFixtu
             client.get_org_issue(oid, issue)
     finally:
         reset_sync_run_id(tok)
-    row = json.loads(
-        [r.message for r in caplog.records if r.name == "integration_audit"][0],
-    )
+    row = [r for r in caplog.records if r.name == "integration_audit"][0].record
     assert row.get("sync_run_id") == "run-abc"
 
 
@@ -136,10 +135,12 @@ def test_get_org_issue_auth_audit_no_token_leak(
     with caplog.at_level(logging.WARNING, logger="integration_audit"):
         with pytest.raises(SnykAuthError):
             client.get_org_issue("o", "i")
-    joined = " ".join(r.message for r in caplog.records)
+
+    fmt = NdjsonFormatter()
+    joined = " ".join(fmt.format(r) for r in caplog.records)
     assert secret not in joined
     assert "Authorization" not in joined
-    rows = [json.loads(r.message) for r in caplog.records if r.name == "integration_audit"]
+    rows = [r.record for r in caplog.records if r.name == "integration_audit"]
     assert rows[-1]["http_status"] == 401
     assert "Authentication Failed" in rows[-1].get("error", "")
 

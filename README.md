@@ -317,27 +317,48 @@ The image **defaults to** **`sync --config /config/config.yaml`** (see [Deployme
 
 ## Logs and observability
 
-The **`sync`** command logs in **UTC**. The **`integration_audit`** logger emits **JSON** lines for operators and Azure Monitor:
+The **`sync`** command configures the root logger to emit **NDJSON** (one **JSON object per line**) on **standard output**. Each line includes **`timestamp`** (UTC, RFC 3339 with **`Z`**), **`level`** (`INFO`, `WARNING`, `ERROR`, …), **`logger`**, and optional fields:
 
-| `event` | Meaning |
+| Field | When present |
+|--------|----------------|
+| **`record`** | Structured payloads for the **`integration_audit`** logger (see below). |
+| **`message`** | Plain messages from other loggers (no **`record`**). |
+| **`exception`** | Traceback text when a logged exception is attached. |
+
+The **`integration_audit`** **`record`** object uses the same **`event`** values as before:
+
+| `record.event` | Meaning |
 |--------|---------|
 | **`integration_http`** | One line per terminal Snyk or Azure DevOps HTTP result (after retries). Includes `method`, `http_status`, `duration_ms`, `safe_target` (no secrets); **401/403** may include **`Authentication Failed`**. |
-| **`sync_summary`** | One line per **`sync`**: duration, **`sync_outcome`** (`success` / `failure`). |
+| **`sync_summary`** | One line per **`sync`**: **`sync_duration_seconds`**, **`sync_outcome`** (`success` / `failure`). |
 
-Example shape:
+Example line (wrapped for readability; runtime output is a **single** line):
 
 ```text
-2026-05-12T10:15:30.123Z INFO integration_audit {"event":"integration_http","integration":"snyk","method":"GET","http_status":200,...}
-2026-05-12T10:15:45.456Z INFO integration_audit {"event":"sync_summary","sync_duration_seconds":12.3,"sync_outcome":"success",...}
+{"level":"INFO","logger":"integration_audit","record":{"duration_ms":12.0,"event":"integration_http","http_status":200,"integration":"snyk","method":"GET","safe_target":"https://api.snyk.io/rest/..."},"timestamp":"2026-05-12T10:15:30.123Z"}
 ```
 
-In **Log Analytics**, parse trailing JSON from **`ContainerAppConsoleLogs_CL`** as needed.
+**Azure SDK noise:** by default, **`azure.*`** loggers are set to **WARNING** so **`HttpLoggingPolicy`** does not flood **INFO**. To troubleshoot Azure client HTTP logging, set env **`INTEGRATION_VERBOSE_AZURE_LOGS=1`** (or **`true`** / **`yes`** / **`on`**). For line-oriented shipping in containers, **`PYTHONUNBUFFERED=1`** is recommended.
+
+### Log Analytics (Kusto)
+
+Console logs often land in **`ContainerAppConsoleLogs`** / **`ContainerAppConsoleLogs_CL`**; the raw message column name varies (**`Log_s`**, **`LogMessage`**, etc.—inspect your workspace).
+
+Parse one NDJSON line and filter by level and audit event, for example:
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where Log_s startswith "{"
+| extend J = parse_json(Log_s)
+| where J.level == "ERROR" or J.level == "WARNING"
+| where J.logger == "integration_audit"
+| extend evt = J.record.event
+| where evt == "sync_summary" and todouble(J.record.sync_duration_seconds) > 300
+```
 
 ### Alerting (portal)
 
-**Latency:** alert when **`sync_duration_seconds`** in successful runs exceeds your threshold (for example **300**). **Auth failures:** alert on repeated **`Authentication Failed`** in **`integration_http`**. Example Kusto patterns and stale-run ideas previously lived in the README; you can copy them from git history or adapt to your workspace schema. **`Terraform` / Bicep** for alerts are out of scope for this repo.
-
-## Troubleshooting
+**Latency:** alert when **`sync_duration_seconds`** in successful runs exceeds your threshold (for example **300**)—after **`parse_json`**, use **`J.record.sync_duration_seconds`** and **`J.record.sync_outcome`**. **Auth failures:** alert on **`integration_http`** records where **`J.record.error`** contains **`Authentication Failed`** (or **`J.record.http_status`** is **`401`** or **`403`**). **`Terraform` / Bicep** for alerts are out of scope for this repo.
 
 | Symptom | What to check |
 | ------- | ------------- |

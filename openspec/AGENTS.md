@@ -5,4 +5,4 @@
 3. Follow **`.cursor/rules/openspec.mdc`** for propose → review → apply → archive; do not implement without an approved change under **`openspec/changes/`**.
 4. Follow **`.cursor/rules/guidelines.mdc`** for Python 3.12+, uv, argparse, secrets via environment variables, tests, and Snyk policy.
 
-Capabilities: **`sync-lifecycle`**, **`azure-platform`**, **`observability`**, **`integration-apis`**, **`snyk-issues-client`**, **`azure-devops-client`**, **`application-config`**. See **`SPEC.md`** for paths into `openspec/specs/`.
+Capabilities: **`sync-lifecycle`**, **`azure-platform`**, **`observability`**, **`integration-apis`**, **`snyk-issues-client`**, **`azure-devops-client`**, **`application-config`**, **`csv-snyk-org-config-generator`**. See **`SPEC.md`** for paths into `openspec/specs/`.

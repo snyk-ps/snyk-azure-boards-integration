@@ -11,3 +11,4 @@ Normative specifications live under **`openspec/specs/`** by capability. Project
 | Snyk issues client (Python REST client, CLI smoke) | [`openspec/specs/snyk-issues-client/spec.md`](openspec/specs/snyk-issues-client/spec.md) |
 | Azure DevOps client (Python WIT client, CLI smoke) | [`openspec/specs/azure-devops-client/spec.md`](openspec/specs/azure-devops-client/spec.md) |
 | Application configuration (YAML, defaults, env, CLI merge) | [`openspec/specs/application-config/spec.md`](openspec/specs/application-config/spec.md) |
+| CSV Snyk org config generator (CSV → starter YAML with `org_mappings`) | [`openspec/specs/csv-snyk-org-config-generator/spec.md`](openspec/specs/csv-snyk-org-config-generator/spec.md) |

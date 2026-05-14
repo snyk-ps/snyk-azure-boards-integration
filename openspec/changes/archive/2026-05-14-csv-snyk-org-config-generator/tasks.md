@@ -18,4 +18,4 @@
 
 ## 4. Final (OpenSpec)
 
-- [ ] Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/csv-snyk-org-config-generator/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive csv-snyk-org-config-generator`** (or project equivalent) to fold deltas into canonical specs.
+- [x] Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/csv-snyk-org-config-generator/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive csv-snyk-org-config-generator`** (or project equivalent) to fold deltas into canonical specs.

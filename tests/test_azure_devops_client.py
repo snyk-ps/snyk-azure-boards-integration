@@ -20,6 +20,7 @@ from integrations.azure_devops.errors import (
     AzureDevOpsServerError,
     MissingPatError,
 )
+from observability.cli_logging import NdjsonFormatter
 
 
 class _FakeResp:
@@ -109,9 +110,11 @@ def test_get_work_item_forbidden_audit_no_pat_leak(caplog: pytest.LogCaptureFixt
     with caplog.at_level(logging.WARNING, logger="integration_audit"):
         with pytest.raises(AzureDevOpsAuthError):
             client.get_work_item("o", "p", 1)
-    joined = " ".join(r.message for r in caplog.records)
+
+    fmt = NdjsonFormatter()
+    joined = " ".join(fmt.format(r) for r in caplog.records)
     assert secret not in joined
-    rows = [json.loads(r.message) for r in caplog.records if r.name == "integration_audit"]
+    rows = [r.record for r in caplog.records if r.name == "integration_audit"]
     assert rows[-1]["http_status"] == 403
     assert "Authentication Failed" in rows[-1].get("error", "")
 

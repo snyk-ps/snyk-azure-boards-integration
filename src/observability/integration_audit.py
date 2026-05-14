@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from urllib.parse import urlparse
 
 _AUDIT = logging.getLogger("integration_audit")
+
+_PLACEHOLDER = "-"
 
 
 def _safe_target(url: str) -> str:
@@ -49,13 +50,12 @@ def log_integration_http(
     elif error:
         payload["error"] = str(error)[:500]
 
-    msg = json.dumps(payload, sort_keys=True)
     if status_code is None:
-        _AUDIT.error(msg)
+        _AUDIT.log(logging.ERROR, _PLACEHOLDER, extra={"record": payload})
     elif status_code >= 400:
-        _AUDIT.warning(msg)
+        _AUDIT.log(logging.WARNING, _PLACEHOLDER, extra={"record": payload})
     else:
-        _AUDIT.info(msg)
+        _AUDIT.log(logging.INFO, _PLACEHOLDER, extra={"record": payload})
 
 
 def log_sync_summary(
@@ -74,4 +74,4 @@ def log_sync_summary(
     }
     if error:
         payload["error"] = error[:500]
-    _AUDIT.info(json.dumps(payload, sort_keys=True))
+    _AUDIT.info(_PLACEHOLDER, extra={"record": payload})

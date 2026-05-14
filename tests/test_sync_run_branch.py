@@ -150,9 +150,11 @@ def test_run_sync_emits_sync_summary_json(
         )
     assert rc == 0
     summaries = [
-        json.loads(r.message)
+        r.record
         for r in caplog.records
-        if r.name == "integration_audit" and "sync_summary" in r.message
+        if r.name == "integration_audit"
+        and getattr(r, "record", None)
+        and r.record.get("event") == "sync_summary"
     ]
     assert len(summaries) == 1
     assert summaries[0]["sync_run_id"] == "fixed-sync-run"
@@ -198,11 +200,14 @@ def test_run_sync_http_audits_share_sync_run_id(
             store=store,
             sync_run_id="corr-1",
         )
-    payloads = [
-        json.loads(r.message)
-        for r in caplog.records
-        if r.name == "integration_audit"
-    ]
+    payloads = []
+    for r in caplog.records:
+        if r.name != "integration_audit":
+            continue
+        payload = getattr(r, "record", None)
+        if payload is None:
+            continue
+        payloads.append(payload)
     http = [p for p in payloads if p.get("event") == "integration_http"]
     assert http, "expected at least one Snyk list HTTP audit"
     for h in http:

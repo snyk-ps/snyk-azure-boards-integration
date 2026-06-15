@@ -1,3 +1,5 @@
+# ⚠️⚠️⚠️ Disclaimer: Use of this integration requires a PS scoping ticket. ⚠️⚠️⚠️
+
 # Azure Boards Integration
 
 ## Description

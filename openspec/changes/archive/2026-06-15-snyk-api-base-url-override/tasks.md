@@ -25,4 +25,4 @@
 ## 5. Verification and archive prep
 
 - [x] 5.1 Run unit tests; Snyk Code/Open Source on any new deps (none expected).
-- [ ] **[ ]** Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/snyk-api-base-url-override/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive snyk-api-base-url-override`** (or project equivalent) to fold deltas into canonical specs.
+- [x] **[x]** Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/snyk-api-base-url-override/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive snyk-api-base-url-override`** (or project equivalent) to fold deltas into canonical specs.

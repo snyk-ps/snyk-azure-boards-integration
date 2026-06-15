@@ -42,7 +42,7 @@ The Snyk issues client SHALL obtain the Snyk API token from the environment vari
 
 ### Requirement: Issue list and get operations
 
-The client SHALL support HTTP `GET` for **listing issues and for retrieving a single issue** in **group** scope **and** in **org** scope, using **`GET /groups/{group_id}/issues`**, **`GET /groups/{group_id}/issues/{issue_id}`**, **`GET /orgs/{org_id}/issues`**, and **`GET /orgs/{org_id}/issues/{issue_id}`** as documented in `openspec/specs/integration-apis/spec.md`. The client SHALL send the **`version`** query parameter set to **`2025-11-05`** on every Issues request unless overridden in tests. The default base URL SHALL be `https://api.snyk.io/rest`; the client SHALL allow a different base URL to be supplied for testing.
+The client SHALL support HTTP `GET` for **listing issues and for retrieving a single issue** in **group** scope **and** in **org** scope, using **`GET /groups/{group_id}/issues`**, **`GET /groups/{group_id}/issues/{issue_id}`**, **`GET /orgs/{org_id}/issues`**, and **`GET /orgs/{org_id}/issues/{issue_id}`** as documented in `openspec/specs/integration-apis/spec.md`. The client SHALL send the **`version`** query parameter set to **`2025-11-05`** on every Issues request unless overridden in tests. The default REST base URL SHALL be **`https://api.snyk.io/rest`**. The client SHALL accept a configurable REST base URL from merged application configuration (see **`application-config`**) or an explicit constructor argument; test injectables remain supported.
 
 For **list** (group or org), the client SHALL request **`limit=100`** on the **first** page URL (maximum page size). For **`effective_severity_level`**, when one or more severity levels apply, the client SHALL encode them as **a single query parameter** whose **value** is the comma-separated list of levels (example: **`high,critical`**). The client SHALL NOT encode repeated separate **`effective_severity_level`** keys for the same list request unless required by a future normative change. When **no** severity filter is supplied programmatically, the client SHALL default to **`high,critical`** as that comma-separated value (matching prior **`high` + `critical`** semantics).
 
@@ -81,6 +81,11 @@ Downstream synchronization SHALL treat **`coordinates[].state`** as **non-author
 
 - **WHEN** the API returns `data[].attributes.status` and `data[].attributes.ignored` for an issue
 - **THEN** the normalized record SHALL include `status` and `ignored` with those values (with `ignored` represented as a boolean suitable for downstream comparisons)
+
+#### Scenario: Sync uses configured regional REST base
+
+- **WHEN** merged configuration sets **`snyk.api_base_url`** to **`https://api.us.snyk.io`**
+- **THEN** **`sync`** SHALL construct the issues client with REST base URL **`https://api.us.snyk.io/rest`**
 
 ---
 

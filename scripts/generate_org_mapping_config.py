@@ -12,6 +12,7 @@ See ``org_config_generator.core`` module docstring for API version and matching 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,6 @@ def main(argv: list[str] | None = None) -> int:
     _bootstrap_path()
 
     from org_config_generator.core import (
-        DEFAULT_BASE_URL,
         DEFAULT_ORG_LIST_VERSION,
         CsvValidationError,
         OrgResolutionError,
@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         resolve_mappings,
         write_atomic,
     )
+    from snyk.constants import DEFAULT_BASE_URL
+    from snyk.urls import resolve_snyk_rest_base
 
     parser = argparse.ArgumentParser(
         description=(
@@ -78,8 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--base-url",
         metavar="URL",
-        default=DEFAULT_BASE_URL,
-        help=f"Snyk REST base URL (default: {DEFAULT_BASE_URL}).",
+        default=None,
+        help=(
+            f"Snyk REST base URL or API origin (default: SNYK_API_BASE_URL if set, "
+            f"else {DEFAULT_BASE_URL})."
+        ),
     )
     parser.add_argument(
         "--api-version",
@@ -92,10 +97,16 @@ def main(argv: list[str] | None = None) -> int:
     in_path = Path(args.input)
     out_path = Path(args.output)
 
+    if args.base_url is not None and str(args.base_url).strip():
+        rest_base = resolve_snyk_rest_base(str(args.base_url).strip())
+    else:
+        env_base = os.environ.get("SNYK_API_BASE_URL", "").strip()
+        rest_base = resolve_snyk_rest_base(env_base) if env_base else DEFAULT_BASE_URL
+
     try:
         rows = parse_csv_rows(in_path)
         orgs = fetch_group_orgs(
-            args.base_url,
+            rest_base,
             args.group_id.strip(),
             args.api_version.strip(),
         )

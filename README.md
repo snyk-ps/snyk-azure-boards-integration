@@ -51,6 +51,7 @@ Full YAML and environment reference: **[CONFIGURATION.md](CONFIGURATION.md)**.
 | **`SNYK_TOKEN`** | Yes | Snyk API token (**secret**; never commit). |
 | **`AZURE_DEVOPS_PAT`** | Yes | Azure DevOps PAT for work items (**secret**). |
 | **`SNYK_GROUP_ID`** | If not set in YAML | Overrides **`snyk.group_id`**. |
+| **`SNYK_API_BASE_URL`** | No (default **SNYK-US-01**) | Overrides **`snyk.api_base_url`** (Snyk API origin). **Recommended** on Azure Container App Jobs for non-US regions. See [CONFIGURATION.md](CONFIGURATION.md#environment-variables). |
 
 **Never** put tokens or PATs in YAML; use the process environment or your platform’s secret store (Key Vault, Container Apps secrets, etc.).
 
@@ -98,7 +99,7 @@ Use this path for scheduled sync in a cluster or cloud (recommended for ongoing 
 
 1. **Image:** use a build from this repo’s **`Dockerfile`**, or pull a release image from **[GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)** (**`ghcr.io`**). **Tags**, digests, and pull/copy hints: **[snyk-azure-boards-integration package on GitHub](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)**. Authenticate to the registry for private images; pin **tags** or **digests**. The image **ENTRYPOINT** is **`python src/main.py`**; **default args** are **`sync --config /config/config.yaml`** (mount policy there unless your platform overrides **command** / **args**).
 
-2. **Secrets:** inject **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via your platform (for example Key Vault references on **Azure Container Apps**), not in the image or YAML.
+2. **Secrets:** inject **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via your platform (for example Key Vault references on **Azure Container Apps**), not in the image or YAML. For Snyk tenants outside **SNYK-US-01**, set non-secret **`SNYK_API_BASE_URL`** to your regional API origin (see [CONFIGURATION.md](CONFIGURATION.md#environment-variables)).
 
 3. **Policy:** supply non-secret config as a mounted file at **`/config/config.yaml`** (recommended, matches the default **`CMD`**), or set **`SNYK_APP_CONFIG`** / override **`--config`** per **[CONFIGURATION.md](CONFIGURATION.md)**. Prefer a **single test Snyk org** for the first production runs until behavior matches expectations.
 
@@ -168,7 +169,7 @@ Production is commonly a **scheduled container** on **[Azure Container Apps](htt
 | **CPU / memory** | Start around **0.5 vCPU** and **1 GiB** for typical **`sync`** batch work; increase if runs are slow or OOM. |
 | **Replicas** | **1** is usually enough if jobs do not overlap. |
 | **Networking** | Outbound **HTTPS** to Snyk, **`dev.azure.com`**, and your Table endpoint if using **`azure_table`**. |
-| **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. |
+| **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. Set **`SNYK_API_BASE_URL`** when not on **SNYK-US-01** (default **`https://api.snyk.io`**). |
 | **Identity** | Managed identity on the app when using **Azure Table** with **`DefaultAzureCredential`**. |
 
 ### Azure Container Apps: portal walkthrough (scheduled job)
@@ -363,7 +364,7 @@ ContainerAppConsoleLogs_CL
 
 | Symptom | What to check |
 | ------- | ------------- |
-| **Snyk `Authentication Failed`** | **`SNYK_TOKEN`**, expiry, org/group access. |
+| **Snyk HTTP 401 / `Authentication Failed`** | **`SNYK_TOKEN`** validity, expiry, and org/group access; also verify **`SNYK_API_BASE_URL`** (or **`snyk.api_base_url`**) matches your Snyk **region** — default is **`https://api.snyk.io`** (**SNYK-US-01**); other regions use different hosts ([regional API URLs](https://docs.snyk.io/developer-tools/snyk-api/rest-api/about-the-rest-api#api-urls)). A valid token against the wrong region often returns **401**. |
 | **Azure DevOps `Authentication Failed`** | **`AZURE_DEVOPS_PAT`**, **Work items** read/write scope, org/project names vs PAT scope. |
 | **`sync` config errors** | **`snyk.group_id`** set; **`azure_boards.defaults`** structure; **`work_item_type`** and states; **`organization`** / **`project`** or **`org_mappings`** rows. |
 | **Table store startup failure** | Endpoint, table name, network, managed identity, **Storage Table Data Contributor**. |

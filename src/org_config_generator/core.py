@@ -40,7 +40,6 @@ REQUIRED_COLUMNS: tuple[str, str, str] = (
 )
 
 DEFAULT_ORG_LIST_VERSION = "2024-03-12"
-DEFAULT_BASE_URL = "https://api.snyk.io/rest"
 ORG_LIST_LIMIT = 100
 
 

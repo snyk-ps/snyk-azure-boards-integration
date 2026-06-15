@@ -82,6 +82,7 @@ Applies at **root** `work_item_template`, under **`azure_boards.defaults.work_it
 | Subkey | Purpose |
 | ------ | ------- |
 | `group_id` | Snyk **Group** UUID for the group that contains your organizations. **Always configure** **`snyk.group_id`** (YAML, env **`SNYK_GROUP_ID`**, or **`--group-id`** on **`sync`** / **`fetch`**). It is required for **`sync`** and group-scoped **`fetch`**, and it is the **mapping store partition** (**`PartitionKey`** / **`group_id`** column) for every issue. With **`org_mappings`**, **listing** uses each row’s **`snyk_org_id`**, but **`snyk.group_id`** is still **always** set for storage and for group-scoped API use. **`snyk.severity_threshold` is not supported** (use **`azure_boards.defaults.severity_threshold`**). Do **not** put **`snyk_org_slug`** here. |
+| `api_base_url` | Snyk **API origin** for your region (non-secret HTTPS URL, scheme + host only). Default **`https://api.snyk.io`** (**SNYK-US-01**). REST calls use **`{origin}/rest`**. Find your region’s host in [Snyk REST API — API URLs](https://docs.snyk.io/developer-tools/snyk-api/rest-api/about-the-rest-api#api-urls). Override via env **`SNYK_API_BASE_URL`** (recommended for Azure Container App Jobs) or CLI **`--snyk-api-base-url`**. |
 
 ## Mapping store (`mapping_store`, SQLite, Azure Table)
 
@@ -141,6 +142,7 @@ Tokens must match exactly; the catalog aligns with [Snyk Origin](https://docs.sn
 | -------- | ---- |
 | `SNYK_APP_CONFIG` | Path to the YAML file if you do not pass `--config` (CLI `--config` wins when both are set). |
 | `SNYK_GROUP_ID` | Overrides `snyk.group_id` from the file (CLI group arguments override this in turn). |
+| `SNYK_API_BASE_URL` | Overrides `snyk.api_base_url` (Snyk API origin). **Recommended** for Azure Container App Jobs when your Snyk tenant is not on **SNYK-US-01** (`https://api.snyk.io`). See [regional API URLs](https://docs.snyk.io/developer-tools/snyk-api/rest-api/about-the-rest-api#api-urls). CLI **`--snyk-api-base-url`** wins when set. |
 | `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.defaults.create_new_work_items` (`true` / `false` / `1` / `0`). |
 | `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.defaults.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
 | `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.defaults.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
@@ -188,7 +190,7 @@ export AZURE_DEVOPS_PAT="***"
 uv run python src/main.py sync --config data/sample-config.yaml
 ```
 
-Use **`--group-id`** to override `snyk.group_id` for one invocation. **`--mapping-store-sqlite-path`** overrides the SQLite mapping database path. Run **`uv run python src/main.py sync --help`** for the full flag list.
+Use **`--group-id`** to override `snyk.group_id` for one invocation. **`--snyk-api-base-url`** overrides the Snyk API origin for one invocation (CLI wins over **`SNYK_API_BASE_URL`** and YAML). **`--mapping-store-sqlite-path`** overrides the SQLite mapping database path. Run **`uv run python src/main.py sync --help`** for the full flag list.
 
 ## `azure-devops-smoke` command
 
@@ -211,7 +213,7 @@ The **`fetch`** smoke command calls the Snyk Issues API (**group** or **org** sc
 
 For **org-scoped** **`fetch`** only, you may pass **`--org-id`** (`fetch list --org-id <uuid>`, **`fetch get --org-id <uuid> <issue_id>`**) so that command can call the API without a merged group id. **Do not** use that as a pattern for **`sync`**: **`sync`** always requires **`snyk.group_id`**.
 
-If both group id and **`--org-id`** are missing after merge, **`fetch`** exits with an error before calling the API. Run **`uv run python src/main.py fetch --help`** for the full layout.
+If both group id and **`--org-id`** are missing after merge, **`fetch`** exits with an error before calling the API. **`fetch`** accepts **`--snyk-api-base-url`** to override the Snyk API origin for that process. Run **`uv run python src/main.py fetch --help`** for the full layout.
 
 **`fetch`** also accepts **`--mapping-store-sqlite-path`** so you can override the SQLite mapping file path for that process without editing YAML.
 

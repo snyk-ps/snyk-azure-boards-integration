@@ -11,6 +11,7 @@ from integrations.azure_devops.constants import AZURE_DEVOPS_PAT_ENV
 from mapping_store import create_mapping_store
 from observability.cli_logging import configure_cli_logging
 from snyk.client import IssuesClient
+from snyk.urls import rest_base_from_origin
 from sync.run import run_sync
 
 
@@ -43,6 +44,16 @@ def register_sync_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
         default=None,
         help="Override snyk.group_id for this run (CLI highest precedence for group id).",
     )
+    sync.add_argument(
+        "--snyk-api-base-url",
+        dest="snyk_api_base_url",
+        metavar="URL",
+        default=None,
+        help=(
+            "Override snyk.api_base_url (Snyk API origin) for this run. "
+            "CLI wins over SNYK_API_BASE_URL and YAML."
+        ),
+    )
 
 
 def run_sync_command(args: argparse.Namespace) -> int:
@@ -52,6 +63,7 @@ def run_sync_command(args: argparse.Namespace) -> int:
             config_path=args.config,
             cli_group_id=args.group_id_flag,
             cli_sqlite_path=args.mapping_store_sqlite_path,
+            cli_snyk_api_base_url=args.snyk_api_base_url,
         )
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -60,7 +72,9 @@ def run_sync_command(args: argparse.Namespace) -> int:
     configure_cli_logging()
     try:
         store = create_mapping_store(config)
-        issues_client = IssuesClient()
+        issues_client = IssuesClient(
+            base_url=rest_base_from_origin(config.snyk.api_base_url),
+        )
         wit_client = WorkItemsClient()
         run_sync(
             config=config,

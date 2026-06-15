@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from urllib.parse import urlsplit
+
 import yaml
 
 from config.errors import ConfigError
@@ -28,12 +30,15 @@ from config.policy_parse import (
     validate_issues_sync_from,
 )
 from config.snyk_origins import parse_sync_included_snyk_origins
+from snyk.constants import DEFAULT_API_ORIGIN
+from snyk.urls import normalize_api_origin, resolve_api_origin
 
 _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 _AZURE_TABLE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9]{2,62}")
 
 _ENV_CONFIG_PATH = "SNYK_APP_CONFIG"
 _ENV_GROUP_ID = "SNYK_GROUP_ID"
+_ENV_API_BASE_URL = "SNYK_API_BASE_URL"
 _ENV_CREATE_NEW = "AZURE_BOARDS_CREATE_NEW_WORK_ITEMS"
 _ENV_AZURE_BOARDS_ORGANIZATION = "AZURE_BOARDS_ORGANIZATION"
 _ENV_AZURE_BOARDS_PROJECT = "AZURE_BOARDS_PROJECT"
@@ -79,7 +84,7 @@ def _default_tree() -> dict[str, Any]:
             "org_mappings": [],
         },
         "work_item_template": {},
-        "snyk": {"group_id": ""},
+        "snyk": {"group_id": "", "api_base_url": DEFAULT_API_ORIGIN},
         "mapping_store": DEFAULT_MAPPING_STORE,
         "sqlite_path": DEFAULT_SQLITE_PATH,
         "mapping_store_azure_table_endpoint": "",
@@ -184,6 +189,21 @@ def resolve_config_path(cli_config: str | None) -> str | None:
     return env_path or None
 
 
+def _validate_api_base_url(raw: object, *, field_name: str = "snyk.api_base_url") -> str:
+    """Return normalized HTTPS API origin or raise :class:`ConfigError`."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise ConfigError(f"{field_name} must be a non-empty HTTPS URL")
+    if not isinstance(raw, str):
+        raise ConfigError(f"{field_name} must be a string")
+    origin = resolve_api_origin(raw)
+    parts = urlsplit(origin)
+    if parts.scheme != "https":
+        raise ConfigError(f"{field_name} must use HTTPS")
+    if not parts.netloc:
+        raise ConfigError(f"{field_name} must be a valid HTTPS URL")
+    return normalize_api_origin(origin)
+
+
 def _apply_env_overrides(tree: dict[str, Any]) -> None:
     """Apply environment layer (between file and CLI)."""
     if _ENV_GROUP_ID in os.environ:
@@ -193,6 +213,17 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             tree["snyk"] = {"group_id": gid}
         else:
             tree["snyk"]["group_id"] = gid
+
+    if _ENV_API_BASE_URL in os.environ:
+        api_base = _validate_api_base_url(
+            os.environ[_ENV_API_BASE_URL],
+            field_name="SNYK_API_BASE_URL",
+        )
+        tree.setdefault("snyk", {})
+        if not isinstance(tree["snyk"], dict):
+            tree["snyk"] = {"api_base_url": api_base}
+        else:
+            tree["snyk"]["api_base_url"] = api_base
 
     if _ENV_CREATE_NEW in os.environ:
         raw = os.environ[_ENV_CREATE_NEW]
@@ -475,10 +506,13 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
             "azure_boards.defaults.severity_threshold instead",
         )
 
-    known_snyk = {"group_id"}
+    known_snyk = {"group_id", "api_base_url"}
     extra = {k: v for k, v in sn_raw.items() if k not in known_snyk}
 
     gid = str(sn_raw.get("group_id", "") or "").strip()
+    api_base_url = _validate_api_base_url(
+        sn_raw.get("api_base_url", DEFAULT_API_ORIGIN),
+    )
 
     if "snyk_org_slug" in ab_raw:
         raise ConfigError(
@@ -520,6 +554,7 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
         work_item_template=dict(wit),
         snyk=SnykConfig(
             group_id=gid,
+            api_base_url=api_base_url,
             extra=extra,
         ),
         mapping_store=mapping_store,
@@ -534,12 +569,14 @@ def load_app_config(
     config_path: str | None,
     cli_group_id: str | None = None,
     cli_sqlite_path: str | None = None,
+    cli_snyk_api_base_url: str | None = None,
 ) -> AppConfig:
     """
     Load merged configuration: defaults → YAML file (if path) → env → CLI overrides.
 
     ``cli_group_id`` is the top layer for ``snyk.group_id`` when non-empty.
     ``cli_sqlite_path`` is the top layer for ``sqlite_path`` when non-empty.
+    ``cli_snyk_api_base_url`` is the top layer for ``snyk.api_base_url`` when non-empty.
     """
     tree = _default_tree()
     path = resolve_config_path(config_path)
@@ -554,4 +591,12 @@ def load_app_config(
         tree["snyk"]["group_id"] = cli_group_id.strip()
     if cli_sqlite_path is not None and cli_sqlite_path.strip():
         tree["sqlite_path"] = cli_sqlite_path.strip()
+    if cli_snyk_api_base_url is not None and cli_snyk_api_base_url.strip():
+        tree.setdefault("snyk", {})
+        if not isinstance(tree["snyk"], dict):
+            tree["snyk"] = {}
+        tree["snyk"]["api_base_url"] = _validate_api_base_url(
+            cli_snyk_api_base_url.strip(),
+            field_name="--snyk-api-base-url",
+        )
     return _tree_to_app_config(tree)

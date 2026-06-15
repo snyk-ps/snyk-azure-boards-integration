@@ -1,8 +1,49 @@
-"""URL helpers for Snyk REST ``links.next`` pagination."""
+"""URL helpers for Snyk API origins, REST bases, and ``links.next`` pagination."""
 
 from __future__ import annotations
 
 from urllib.parse import urljoin, urlsplit, urlunsplit
+
+from snyk.constants import DEFAULT_API_ORIGIN
+
+
+def normalize_api_origin(origin: str) -> str:
+    """Return the Snyk API origin (scheme + host) without a trailing slash."""
+    return origin.strip().rstrip("/")
+
+
+def resolve_api_origin(configured: str) -> str:
+    """Resolve an API origin or REST base URL to the origin (no ``/rest`` suffix).
+
+    Accepts ``https://api.eu.snyk.io`` or ``https://api.eu.snyk.io/rest``.
+    """
+    s = normalize_api_origin(configured)
+    if s.endswith("/rest"):
+        return s[: -len("/rest")]
+    return s
+
+
+def rest_base_from_origin(origin: str) -> str:
+    """Return the REST API base URL for ``origin`` (no trailing slash)."""
+    return f"{normalize_api_origin(origin)}/rest"
+
+
+def v1_base_from_origin(origin: str) -> str:
+    """Return the legacy V1 API base URL for ``origin`` (no trailing slash)."""
+    return f"{normalize_api_origin(origin)}/v1"
+
+
+def resolve_snyk_rest_base(configured: str) -> str:
+    """Resolve origin or REST base input to a normalized REST base URL."""
+    s = configured.strip().rstrip("/")
+    if s.endswith("/rest"):
+        return s
+    return rest_base_from_origin(s)
+
+
+def default_api_origin() -> str:
+    """Return the built-in default API origin (SNYK-US-01)."""
+    return DEFAULT_API_ORIGIN
 
 
 def normalize_base_url(base_url: str) -> str:

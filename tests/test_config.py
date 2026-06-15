@@ -37,7 +37,80 @@ def test_load_app_config_defaults_no_file() -> None:
     assert c.azure_boards.project == ""
     assert c.azure_boards.defaults.severity_threshold == "high"
     assert c.snyk.group_id == ""
+    assert c.snyk.api_base_url == "https://api.snyk.io"
     assert c.work_item_template == {}
+
+
+def test_load_app_config_api_base_url_from_yaml(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "snyk:\n"
+        "  group_id: g\n"
+        "  api_base_url: https://api.eu.snyk.io\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.snyk.api_base_url == "https://api.eu.snyk.io"
+
+
+def test_load_app_config_api_base_url_env_overrides_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "snyk:\n"
+        "  group_id: g\n"
+        "  api_base_url: https://api.eu.snyk.io\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SNYK_API_BASE_URL", "https://api.us.snyk.io")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.snyk.api_base_url == "https://api.us.snyk.io"
+
+
+def test_load_app_config_api_base_url_cli_overrides_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("snyk:\n  group_id: g\n", encoding="utf-8")
+    monkeypatch.setenv("SNYK_API_BASE_URL", "https://api.us.snyk.io")
+    c = load_app_config(
+        config_path=str(p),
+        cli_group_id=None,
+        cli_snyk_api_base_url="https://api.au.snyk.io",
+    )
+    assert c.snyk.api_base_url == "https://api.au.snyk.io"
+
+
+def test_load_app_config_api_base_url_accepts_rest_suffix(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "snyk:\n"
+        "  group_id: g\n"
+        "  api_base_url: https://api.eu.snyk.io/rest\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.snyk.api_base_url == "https://api.eu.snyk.io"
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["", "http://api.snyk.io", "not-a-url"],
+)
+def test_load_app_config_rejects_invalid_api_base_url(
+    tmp_path: Path,
+    bad_value: str,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        f"snyk:\n  group_id: g\n  api_base_url: {bad_value!r}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="api_base_url"):
+        load_app_config(config_path=str(p), cli_group_id=None)
 
 
 def test_load_app_config_from_yaml_file(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from snyk.constants import DEFAULT_API_ORIGIN
+
 
 ISSUES_SYNC_FROM_HISTORICAL = "historical"
 REOPEN_POLICY_NEW_WORK_ITEM = "new_work_item"
@@ -66,6 +68,7 @@ class SnykConfig:
     """Snyk integration settings (non-secret)."""
 
     group_id: str = ""
+    api_base_url: str = DEFAULT_API_ORIGIN
     extra: dict[str, Any] = field(default_factory=dict)
 
 

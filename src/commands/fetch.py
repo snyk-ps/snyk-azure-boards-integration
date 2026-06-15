@@ -11,6 +11,7 @@ from typing import Any
 from config import ConfigError, load_app_config
 from snyk.client import GroupIssueListParams, IssuesClient
 from snyk.errors import SnykApiError
+from snyk.urls import rest_base_from_origin
 from sync.lifecycle import effective_severity_levels_from_threshold
 
 
@@ -55,6 +56,16 @@ def register_fetch_parser(subparsers: argparse._SubParsersAction[argparse.Argume
         help=(
             "Snyk group id (CLI override). For list, optional if set in config/env. "
             "For get with one argument, supplies group when not using two-arg form."
+        ),
+    )
+    fetch.add_argument(
+        "--snyk-api-base-url",
+        dest="snyk_api_base_url",
+        metavar="URL",
+        default=None,
+        help=(
+            "Override snyk.api_base_url (Snyk API origin) for this run. "
+            "CLI wins over SNYK_API_BASE_URL and YAML."
         ),
     )
     fetch.add_argument(
@@ -194,6 +205,7 @@ def run_fetch(args: argparse.Namespace) -> int:
             config_path=args.config,
             cli_group_id=cli_gid,
             cli_sqlite_path=args.mapping_store_sqlite_path,
+            cli_snyk_api_base_url=args.snyk_api_base_url,
         )
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
@@ -217,7 +229,9 @@ def run_fetch(args: argparse.Namespace) -> int:
         print("SNYK_TOKEN is not set or empty", file=sys.stderr)
         return 1
 
-    client = IssuesClient()
+    client = IssuesClient(
+        base_url=rest_base_from_origin(config.snyk.api_base_url),
+    )
     try:
         if args.action == "list":
             params = _list_params_from_args(

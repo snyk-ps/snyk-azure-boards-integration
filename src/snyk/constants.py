@@ -7,8 +7,11 @@ new recommended version string.
 See: https://docs.snyk.io/snyk-api/rest-api/getting-started-with-the-rest-api
 """
 
-# Default REST base (no trailing slash) — see openspec/specs/integration-apis/spec.md
-DEFAULT_BASE_URL: str = "https://api.snyk.io/rest"
+# Default API origin (SNYK-US-01) — see openspec/specs/integration-apis/spec.md
+DEFAULT_API_ORIGIN: str = "https://api.snyk.io"
+
+# Default REST base (no trailing slash), derived from DEFAULT_API_ORIGIN
+DEFAULT_BASE_URL: str = f"{DEFAULT_API_ORIGIN}/rest"
 
 # Recommended API version for REST GET requests (query parameter ``version``).
 SNYK_REST_API_VERSION: str = "2025-11-05"

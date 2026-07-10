@@ -18,4 +18,4 @@
 
 ## 4. Archive (human)
 
-- [ ] 4.1 Merge **`openspec/specs/`** only when archiving: do **not** copy **`openspec/changes/description-hyperlinks-aca-replica-timeout/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive description-hyperlinks-aca-replica-timeout`** (or project equivalent) to fold deltas into canonical specs.
+- [x] 4.1 Merge **`openspec/specs/`** only when archiving: do **not** copy **`openspec/changes/description-hyperlinks-aca-replica-timeout/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive description-hyperlinks-aca-replica-timeout`** (or project equivalent) to fold deltas into canonical specs.

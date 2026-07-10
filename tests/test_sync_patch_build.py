@@ -1,6 +1,7 @@
 """Tests for sync JSON Patch helpers."""
 
 from sync.patch_build import (
+    _escape_and_linkify_plain_text,
     build_create_patch,
     filter_assignee_from_create_patch,
     template_supplies_assigned_to,
@@ -63,3 +64,64 @@ def test_build_create_patch_description_html_paragraph_breaks() -> None:
     assert v.count("<p>") == 2
     assert "First block" in v
     assert "Second block" in v
+
+
+def test_escape_and_linkify_plain_text_https_url() -> None:
+    out = _escape_and_linkify_plain_text(
+        "Access request: https://example.com/request-snyk-access",
+    )
+    assert '<a href="https://example.com/request-snyk-access">' in out
+    assert "Access request:" in out
+
+
+def test_escape_and_linkify_strips_trailing_period_from_href() -> None:
+    out = _escape_and_linkify_plain_text("See https://example.com/path.")
+    assert 'href="https://example.com/path"' in out
+    assert out.endswith(".")
+
+
+def test_escape_and_linkify_cve_nvd_url_in_parens() -> None:
+    plain = "CVE-2023-29017 (https://nvd.nist.gov/vuln/detail/CVE-2023-29017)"
+    out = _escape_and_linkify_plain_text(plain)
+    assert "CVE-2023-29017" in out
+    assert '<a href="https://nvd.nist.gov/vuln/detail/CVE-2023-29017">' in out
+    assert out.endswith(")")
+
+
+def test_escape_and_linkify_escapes_ampersand_outside_urls() -> None:
+    out = _escape_and_linkify_plain_text("x & y https://example.com")
+    assert "&amp;" in out
+    assert "<a href=" in out
+
+
+def test_escape_and_linkify_does_not_linkify_javascript_scheme() -> None:
+    out = _escape_and_linkify_plain_text("javascript:alert(1)")
+    assert "<a href=" not in out
+    assert "javascript:alert(1)" in out
+
+
+def test_build_create_patch_open_in_snyk_keeps_view_in_snyk_label() -> None:
+    url = "https://app.snyk.io/org/acme/project/p#issue-SNYK-1"
+    plain = f"Open in Snyk\n{url}\n\nExtra note"
+    ops = build_create_patch(
+        title="T",
+        description=plain,
+        active_state="New",
+        template={},
+    )
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    val = desc_op["value"]
+    assert 'view in Snyk</a>' in val
+    assert f'href="{url}"' in val
+    assert f">{url}</a>" not in val
+
+
+def test_build_create_patch_appendix_url_is_hyperlink() -> None:
+    ops = build_create_patch(
+        title="T",
+        description="Finding details\n\nAccess request:\nhttps://example.com/access",
+        active_state="New",
+        template={},
+    )
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    assert '<a href="https://example.com/access">' in desc_op["value"]

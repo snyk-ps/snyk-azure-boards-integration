@@ -170,6 +170,7 @@ Production is commonly a **scheduled container** on **[Azure Container Apps](htt
 | **`sync` schedule** | **Every 24 hours** (daily) is recommended; adjust if you need fresher work items or must throttle API usage. |
 | **CPU / memory** | Start around **0.5 vCPU** and **1 GiB** for typical **`sync`** batch work; increase if runs are slow or OOM. |
 | **Replicas** | **1** is usually enough if jobs do not overlap. |
+| **Replica timeout** | Set **`replicaTimeout`** (seconds) to at least the longest **`sync`** run you expect, plus buffer. Default is **30 minutes** ([job configuration](https://learn.microsoft.com/en-us/azure/container-apps/jobs?tabs=azure-cli#job-execution-configuration)). **Rough guide:** ~**60 seconds per 50 work items**; stress-test with your config and volume. Use **`sync_summary`** → **`sync_duration_seconds`** in logs (see [Logs and observability](#logs-and-observability)) and set timeout above observed peak with margin (e.g. **1.5–2×**). Portal: job **Configuration** → **Replica timeout**; CLI: **`--replica-timeout`**. |
 | **Networking** | Outbound **HTTPS** to Snyk, **`dev.azure.com`**, and your Table endpoint if using **`azure_table`**. |
 | **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. Set **`SNYK_API_BASE_URL`** when not on **SNYK-US-01** (default **`https://api.snyk.io`**). |
 | **Identity** | Managed identity on the app when using **Azure Table** with **`DefaultAzureCredential`**. |
@@ -221,6 +222,11 @@ You can either create the environment **inside** the job wizard (**Basics**) or 
 
 - **Trigger type:** **Scheduled**
 - **Cron expression:** use a **five-field** schedule in **UTC** (examples: `0 2 * * *` = daily 02:00 UTC). Adjust to your cadence.
+- **Replica timeout:** set to the maximum duration you expect a single **`sync`** execution to need, plus a safety buffer. The platform default is **30 minutes**; large tenants often need more.
+  - **Starting estimate:** ~**60 seconds per 50 work items** (very rough; depends on creates vs updates, Snyk pagination, ADO latency, and **`org_mappings`** count).
+  - **Tune with data:** after a test run, check **`sync_summary`** in logs for **`sync_duration_seconds`**, then set **`replicaTimeout`** comfortably above your worst observed run (see [Logs and observability](#logs-and-observability)).
+  - **Portal:** open the job → **Configuration** → **Replica timeout**.
+  - **CLI:** **`--replica-timeout <seconds>`** on create/update ([job configuration](https://learn.microsoft.com/en-us/azure/container-apps/jobs?tabs=azure-cli#job-execution-configuration)).
 
 **Container** (main step)
 
@@ -287,6 +293,7 @@ If the **create** wizard does not offer volumes, finish **Create**, then open th
 | **Missing config** | The share contains **`config.yaml`** and the mount path is exactly **`/config`**. |
 | **Volume mount / Permission denied** | Storage account **firewall** / **public network access**, wrong **access key** on the environment volume, or share path; see **A** (**Networking**) and [Use storage mounts in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts). |
 | **Auth errors** | Secrets and PAT scopes (**Work items: Read & write**). |
+| **Job stops at ~30 minutes** (`DeadlineExceeded`, “active longer than specified deadline”) | Increase **Replica timeout** on the Container App Job (default **30 minutes**). Size from **`sync_duration_seconds`** in **`sync_summary`** logs; use ~**60 s / 50 work items** only as a first guess, then stress-test and add buffer. See [Minimum requirements](#minimum-requirements-azure-container-apps). |
 | **Pull image failed** | **`ghcr.io`** visibility and any **registry credentials** on the job. |
 
 ### Azure Table Storage

@@ -3,13 +3,43 @@
 from __future__ import annotations
 
 import html
+import re
 from typing import Any, Mapping
+
+_HTTP_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+_URL_TRAILING_PUNCT = ".,;:)"
 
 from sync.work_item_tags import (
     combine_tags_for_work_item,
     managed_severity_tag_from_level,
     managed_type_tag_from_issue_type,
 )
+
+
+def _escape_and_linkify_plain_text(plain: str) -> str:
+    """
+    Escape plain text for HTML and wrap ``http://`` / ``https://`` URLs in anchors.
+
+    Only ``http(s)`` schemes are linkified. Trailing punctuation (for example ``.``)
+    is kept outside the anchor.
+    """
+    parts: list[str] = []
+    last = 0
+    for match in _HTTP_URL_RE.finditer(plain):
+        if match.start() > last:
+            parts.append(html.escape(plain[last : match.start()], quote=False))
+        raw_url = match.group(0)
+        url = raw_url.rstrip(_URL_TRAILING_PUNCT)
+        suffix = raw_url[len(url) :]
+        href = html.escape(url, quote=True)
+        label = html.escape(url, quote=False)
+        parts.append(f'<a href="{href}">{label}</a>')
+        if suffix:
+            parts.append(html.escape(suffix, quote=False))
+        last = match.end()
+    if last < len(plain):
+        parts.append(html.escape(plain[last:], quote=False))
+    return "".join(parts)
 
 
 def _ado_system_description_html(plain: str) -> str:
@@ -20,6 +50,7 @@ def _ado_system_description_html(plain: str) -> str:
 
     A block that starts with ``Open in Snyk`` and a second line with
     ``https://app.snyk.io/...`` renders the URL as a clickable link.
+    Other ``http(s)`` URLs in description text are linkified in generic blocks.
     """
     if not plain.strip():
         return ""
@@ -37,10 +68,13 @@ def _ado_system_description_html(plain: str) -> str:
             href_esc = html.escape(url, quote=True)
             inner = f'Open in Snyk: <a href="{href_esc}">view in Snyk</a>'
             if rest:
-                inner += "<br />" + html.escape(rest, quote=False).replace("\n", "<br />")
+                inner += (
+                    "<br />"
+                    + _escape_and_linkify_plain_text(rest).replace("\n", "<br />")
+                )
             parts.append(f"<p>{inner}</p>")
         else:
-            inner = html.escape(block, quote=False).replace("\n", "<br />")
+            inner = _escape_and_linkify_plain_text(block).replace("\n", "<br />")
             parts.append(f"<p>{inner}</p>")
     return "".join(parts)
 

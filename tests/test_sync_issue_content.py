@@ -234,3 +234,4 @@ def test_build_create_patch_escapes_special_chars_in_description() -> None:
     val = desc_op["value"]
     assert "&amp;" in val
     assert "&lt;" in val
+    assert "&gt;" in val

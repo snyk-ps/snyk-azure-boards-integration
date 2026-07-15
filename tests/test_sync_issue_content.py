@@ -110,6 +110,16 @@ def test_snyk_ui_issue_url_encodes_slug() -> None:
     assert "org%20with%20spaces" in u
 
 
+def test_snyk_ui_issue_url_regional_app_base() -> None:
+    u = snyk_ui_issue_url(
+        snyk_org_slug="acme",
+        project_id="proj-uuid",
+        issue_key="SNYK-1",
+        app_base_url="https://app.eu.snyk.io",
+    )
+    assert u.startswith("https://app.eu.snyk.io/org/acme/project/proj-uuid#issue-SNYK-1")
+
+
 def test_recommended_upgrade_lines_from_remedy() -> None:
     attrs = {
         "coordinates": [

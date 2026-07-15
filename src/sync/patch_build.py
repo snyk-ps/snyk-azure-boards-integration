@@ -9,6 +9,9 @@ from typing import Any, Mapping
 _HTTP_URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _URL_TRAILING_PUNCT = ".,;:)"
 
+from snyk.constants import DEFAULT_APP_ORIGIN
+from snyk.urls import normalize_app_origin
+
 from sync.work_item_tags import (
     combine_tags_for_work_item,
     managed_severity_tag_from_level,
@@ -42,18 +45,23 @@ def _escape_and_linkify_plain_text(plain: str) -> str:
     return "".join(parts)
 
 
-def _ado_system_description_html(plain: str) -> str:
+def _ado_system_description_html(
+    plain: str,
+    *,
+    app_base_url: str = DEFAULT_APP_ORIGIN,
+) -> str:
     """
     Azure Boards ``System.Description`` is HTML; plain ``\\n`` / ``\\n\\n`` often
     collapse in the web UI. Split on blank lines into paragraphs and use
     ``<br />`` for single line breaks.
 
     A block that starts with ``Open in Snyk`` and a second line with
-    ``https://app.snyk.io/...`` renders the URL as a clickable link.
+    ``{app_base_url}/...`` renders the URL as a clickable link.
     Other ``http(s)`` URLs in description text are linkified in generic blocks.
     """
     if not plain.strip():
         return ""
+    snyk_url_prefix = f"{normalize_app_origin(app_base_url)}/"
     blocks = [b.strip() for b in plain.split("\n\n") if b.strip()]
     parts: list[str] = []
     for block in blocks:
@@ -61,7 +69,7 @@ def _ado_system_description_html(plain: str) -> str:
         if (
             len(lines) >= 2
             and lines[0].strip() == "Open in Snyk"
-            and lines[1].strip().startswith("https://app.snyk.io/")
+            and lines[1].strip().startswith(snyk_url_prefix)
         ):
             url = lines[1].strip()
             rest = "\n".join(lines[2:]).strip()
@@ -142,6 +150,7 @@ def build_create_patch(
     template: Mapping[str, Any],
     issue_effective_severity_level: str | None = None,
     issue_snyk_type: str | None = None,
+    app_base_url: str = DEFAULT_APP_ORIGIN,
 ) -> list[dict[str, Any]]:
     """
     JSON Patch for ``POST`` work item create.
@@ -153,7 +162,10 @@ def build_create_patch(
         {
             "op": "add",
             "path": "/fields/System.Description",
-            "value": _ado_system_description_html(description),
+            "value": _ado_system_description_html(
+                description,
+                app_base_url=app_base_url,
+            ),
         },
         {"op": "add", "path": "/fields/System.State", "value": active_state},
     ]
@@ -185,6 +197,7 @@ def build_update_patch(
     template: Mapping[str, Any],
     issue_effective_severity_level: str | None = None,
     issue_snyk_type: str | None = None,
+    app_base_url: str = DEFAULT_APP_ORIGIN,
 ) -> list[dict[str, Any]]:
     """JSON Patch for ``PATCH`` update (replace built-ins, tags, then template ops)."""
     ops: list[dict[str, Any]] = [
@@ -192,7 +205,10 @@ def build_update_patch(
         {
             "op": "replace",
             "path": "/fields/System.Description",
-            "value": _ado_system_description_html(description),
+            "value": _ado_system_description_html(
+                description,
+                app_base_url=app_base_url,
+            ),
         },
         {"op": "replace", "path": "/fields/System.State", "value": state},
     ]

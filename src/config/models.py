@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from snyk.constants import DEFAULT_API_ORIGIN
+from snyk.constants import DEFAULT_API_ORIGIN, DEFAULT_APP_ORIGIN
 
 
 ISSUES_SYNC_FROM_HISTORICAL = "historical"
@@ -69,6 +69,7 @@ class SnykConfig:
 
     group_id: str = ""
     api_base_url: str = DEFAULT_API_ORIGIN
+    app_base_url: str = DEFAULT_APP_ORIGIN
     extra: dict[str, Any] = field(default_factory=dict)
 
 

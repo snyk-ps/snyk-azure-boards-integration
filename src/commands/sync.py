@@ -54,6 +54,16 @@ def register_sync_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
             "CLI wins over SNYK_API_BASE_URL and YAML."
         ),
     )
+    sync.add_argument(
+        "--snyk-app-base-url",
+        dest="snyk_app_base_url",
+        metavar="URL",
+        default=None,
+        help=(
+            "Override snyk.app_base_url (Snyk web app origin) for work item links. "
+            "CLI wins over SNYK_APP_BASE_URL and YAML."
+        ),
+    )
 
 
 def run_sync_command(args: argparse.Namespace) -> int:
@@ -64,6 +74,7 @@ def run_sync_command(args: argparse.Namespace) -> int:
             cli_group_id=args.group_id_flag,
             cli_sqlite_path=args.mapping_store_sqlite_path,
             cli_snyk_api_base_url=args.snyk_api_base_url,
+            cli_snyk_app_base_url=args.snyk_app_base_url,
         )
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)

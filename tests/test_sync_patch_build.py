@@ -116,6 +116,21 @@ def test_build_create_patch_open_in_snyk_keeps_view_in_snyk_label() -> None:
     assert f">{url}</a>" not in val
 
 
+def test_build_create_patch_open_in_snyk_regional_app_base() -> None:
+    url = "https://app.eu.snyk.io/org/acme/project/p#issue-SNYK-1"
+    plain = f"Open in Snyk\n{url}"
+    ops = build_create_patch(
+        title="T",
+        description=plain,
+        active_state="New",
+        template={},
+        app_base_url="https://app.eu.snyk.io",
+    )
+    desc_op = next(o for o in ops if o.get("path") == "/fields/System.Description")
+    assert 'view in Snyk</a>' in desc_op["value"]
+    assert f'href="{url}"' in desc_op["value"]
+
+
 def test_build_create_patch_appendix_url_is_hyperlink() -> None:
     ops = build_create_patch(
         title="T",

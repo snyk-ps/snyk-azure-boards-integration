@@ -7,6 +7,9 @@ import re
 from typing import Any, Mapping
 from urllib.parse import quote
 
+from snyk.constants import DEFAULT_APP_ORIGIN
+from snyk.urls import normalize_app_origin
+
 CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
 MAX_TITLE_LEN = 255
 # Azure DevOps rich-text field practical limit; tail is truncated with notice.
@@ -159,6 +162,7 @@ def snyk_ui_issue_url(
     snyk_org_slug: str,
     project_id: str,
     issue_key: str,
+    app_base_url: str = DEFAULT_APP_ORIGIN,
 ) -> str:
     """
     Canonical Snyk web app URL: org / project / fragment issue key.
@@ -170,7 +174,8 @@ def snyk_ui_issue_url(
     pid = project_id.strip()
     key = issue_key.strip()
     org_seg = quote(slug, safe="")
-    base = f"https://app.snyk.io/org/{org_seg}/project/{pid}"
+    origin = normalize_app_origin(app_base_url)
+    base = f"{origin}/org/{org_seg}/project/{pid}"
     return f"{base}#issue-{key}"
 
 
@@ -446,6 +451,7 @@ def build_system_description(
     snyk_project_origin: str | None = None,
     severity: str | None = None,
     description_appendix: str = "",
+    app_base_url: str = DEFAULT_APP_ORIGIN,
 ) -> str:
     """Multi-line plain text for ``System.Description``.
 
@@ -466,6 +472,7 @@ def build_system_description(
         snyk_org_slug=snyk_org_slug,
         project_id=project_id,
         issue_key=issue_key,
+        app_base_url=app_base_url,
     )
 
     sev = str(severity or "").strip()

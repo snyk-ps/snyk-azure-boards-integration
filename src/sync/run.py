@@ -212,6 +212,7 @@ def _run_sync_body(
                 log=log,
                 issues_client=issues_client,
                 snyk_org_slug=slug,
+                app_base_url=config.snyk.app_base_url,
                 use_org_scope_for_detail=True,
                 snyk_org_id_for_detail=m.snyk_org_id.strip(),
                 snyk_group_id_for_detail=config.snyk.group_id.strip()
@@ -248,6 +249,7 @@ def _run_sync_body(
         log=log,
         issues_client=issues_client,
         snyk_org_slug=slug,
+        app_base_url=config.snyk.app_base_url,
         use_org_scope_for_detail=False,
         snyk_org_id_for_detail=None,
         snyk_group_id_for_detail=group_id,
@@ -269,6 +271,7 @@ def _run_sync_batch(
     log: logging.Logger,
     issues_client: IssuesClient,
     snyk_org_slug: str,
+    app_base_url: str,
     use_org_scope_for_detail: bool,
     snyk_org_id_for_detail: str | None,
     snyk_group_id_for_detail: str,
@@ -312,6 +315,7 @@ def _run_sync_batch(
                 log=log,
                 issues_client=issues_client,
                 snyk_org_slug=snyk_org_slug,
+                app_base_url=app_base_url,
                 use_org_scope_for_detail=use_org_scope_for_detail,
                 snyk_org_id_for_detail=snyk_org_id_for_detail,
                 snyk_group_id_for_detail=snyk_group_id_for_detail,
@@ -336,6 +340,7 @@ def _sync_one_issue(
     log: logging.Logger,
     issues_client: IssuesClient,
     snyk_org_slug: str,
+    app_base_url: str,
     use_org_scope_for_detail: bool,
     snyk_org_id_for_detail: str | None,
     snyk_group_id_for_detail: str,
@@ -437,6 +442,7 @@ def _sync_one_issue(
         snyk_project_origin=snyk_po or None,
         severity=severity or None,
         description_appendix=ab.defaults.work_item_description_appendix,
+        app_base_url=app_base_url,
     )
 
     prev_snyk = row.snyk_status if row is not None else None
@@ -470,6 +476,7 @@ def _sync_one_issue(
             template=template,
             issue_effective_severity_level=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
+            app_base_url=app_base_url,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -536,6 +543,7 @@ def _sync_one_issue(
                     template=template,
                     issue_effective_severity_level=severity_level_for_tags,
                     issue_snyk_type=issue_snyk_type,
+                    app_base_url=app_base_url,
                 )
                 updated = wit_client.update_work_item(
                     ado_org,
@@ -585,6 +593,7 @@ def _sync_one_issue(
             template=template,
             issue_effective_severity_level=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
+            app_base_url=app_base_url,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -655,6 +664,7 @@ def _sync_one_issue(
         template=template,
         issue_effective_severity_level=severity_level_for_tags,
         issue_snyk_type=issue_snyk_type,
+        app_base_url=app_base_url,
     )
     updated = wit_client.update_work_item(ado_org, ado_proj, wid, patches)
     wst = str(updated.get("work_item_status") or "")

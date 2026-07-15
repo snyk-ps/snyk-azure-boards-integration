@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from snyk.constants import DEFAULT_API_ORIGIN
+from snyk.constants import DEFAULT_API_ORIGIN, DEFAULT_APP_ORIGIN
 
 
 def normalize_api_origin(origin: str) -> str:
     """Return the Snyk API origin (scheme + host) without a trailing slash."""
     return origin.strip().rstrip("/")
+
+
+def normalize_app_origin(origin: str) -> str:
+    """Return the Snyk web app origin (scheme + host) without a trailing slash."""
+    return normalize_api_origin(origin)
+
+
+def default_app_origin() -> str:
+    """Return the built-in default web app origin (SNYK-US-01)."""
+    return DEFAULT_APP_ORIGIN
 
 
 def resolve_api_origin(configured: str) -> str:

@@ -10,6 +10,9 @@ See: https://docs.snyk.io/snyk-api/rest-api/getting-started-with-the-rest-api
 # Default API origin (SNYK-US-01) — see openspec/specs/integration-apis/spec.md
 DEFAULT_API_ORIGIN: str = "https://api.snyk.io"
 
+# Default web app origin (SNYK-US-01) for P2-FR-5.4 work item links
+DEFAULT_APP_ORIGIN: str = "https://app.snyk.io"
+
 # Default REST base (no trailing slash), derived from DEFAULT_API_ORIGIN
 DEFAULT_BASE_URL: str = f"{DEFAULT_API_ORIGIN}/rest"
 

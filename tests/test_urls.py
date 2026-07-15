@@ -2,9 +2,11 @@
 
 import pytest
 
-from snyk.constants import DEFAULT_API_ORIGIN, DEFAULT_BASE_URL
+from snyk.constants import DEFAULT_API_ORIGIN, DEFAULT_APP_ORIGIN, DEFAULT_BASE_URL
 from snyk.urls import (
+    default_app_origin,
     normalize_api_origin,
+    normalize_app_origin,
     normalize_base_url,
     resolve_api_origin,
     resolve_next_url,
@@ -21,6 +23,12 @@ def test_normalize_base_url_strips_trailing_slash() -> None:
 def test_default_api_origin_is_snyk_us_01() -> None:
     assert DEFAULT_API_ORIGIN == "https://api.snyk.io"
     assert DEFAULT_BASE_URL == "https://api.snyk.io/rest"
+    assert DEFAULT_APP_ORIGIN == "https://app.snyk.io"
+    assert default_app_origin() == "https://app.snyk.io"
+
+
+def test_normalize_app_origin_strips_trailing_slash() -> None:
+    assert normalize_app_origin("https://app.eu.snyk.io/") == "https://app.eu.snyk.io"
 
 
 def test_normalize_api_origin_strips_trailing_slash() -> None:

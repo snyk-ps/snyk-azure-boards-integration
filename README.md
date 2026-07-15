@@ -54,6 +54,7 @@ Full YAML and environment reference: **[CONFIGURATION.md](CONFIGURATION.md)**.
 | **`AZURE_DEVOPS_PAT`** | Yes | Azure DevOps PAT for work items (**secret**). |
 | **`SNYK_GROUP_ID`** | If not set in YAML | Overrides **`snyk.group_id`**. |
 | **`SNYK_API_BASE_URL`** | No (default **SNYK-US-01**) | Overrides **`snyk.api_base_url`** (Snyk API origin). **Recommended** on Azure Container App Jobs for non-US regions. See [CONFIGURATION.md](CONFIGURATION.md#environment-variables). |
+| **`SNYK_APP_BASE_URL`** | No (default **SNYK-US-01**) | Overrides **`snyk.app_base_url`** (Snyk web app origin for work item links). **Recommended** on Azure Container App Jobs for non-US regions. See [CONFIGURATION.md](CONFIGURATION.md#environment-variables). |
 
 **Never** put tokens or PATs in YAML; use the process environment or your platform’s secret store (Key Vault, Container Apps secrets, etc.).
 
@@ -101,7 +102,7 @@ Use this path for scheduled sync in a cluster or cloud (recommended for ongoing 
 
 1. **Image:** use a build from this repo’s **`Dockerfile`**, or pull a release image from **[GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)** (**`ghcr.io`**). **Tags**, digests, and pull/copy hints: **[snyk-azure-boards-integration package on GitHub](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration)**. Authenticate to the registry for private images; pin **tags** or **digests**. The image **ENTRYPOINT** is **`python src/main.py`**; **default args** are **`sync --config /config/config.yaml`** (mount policy there unless your platform overrides **command** / **args**).
 
-2. **Secrets:** inject **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via your platform (for example Key Vault references on **Azure Container Apps**), not in the image or YAML. For Snyk tenants outside **SNYK-US-01**, set non-secret **`SNYK_API_BASE_URL`** to your regional API origin (see [CONFIGURATION.md](CONFIGURATION.md#environment-variables)).
+2. **Secrets:** inject **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via your platform (for example Key Vault references on **Azure Container Apps**), not in the image or YAML. For Snyk tenants outside **SNYK-US-01**, set non-secret **`SNYK_API_BASE_URL`** and **`SNYK_APP_BASE_URL`** to your regional API and web app origins (see [CONFIGURATION.md](CONFIGURATION.md#environment-variables)).
 
 3. **Policy:** supply non-secret config as a mounted file at **`/config/config.yaml`** (recommended, matches the default **`CMD`**), or set **`SNYK_APP_CONFIG`** / override **`--config`** per **[CONFIGURATION.md](CONFIGURATION.md)**. Prefer a **single test Snyk org** for the first production runs until behavior matches expectations.
 
@@ -172,7 +173,7 @@ Production is commonly a **scheduled container** on **[Azure Container Apps](htt
 | **Replicas** | **1** is usually enough if jobs do not overlap. |
 | **Replica timeout** | Set **`replicaTimeout`** (seconds) to at least the longest **`sync`** run you expect, plus buffer. Default is **30 minutes** ([job configuration](https://learn.microsoft.com/en-us/azure/container-apps/jobs?tabs=azure-cli#job-execution-configuration)). **Rough guide:** ~**60 seconds per 50 work items**; stress-test with your config and volume. Use **`sync_summary`** → **`sync_duration_seconds`** in logs (see [Logs and observability](#logs-and-observability)) and set timeout above observed peak with margin (e.g. **1.5–2×**). Portal: job **Configuration** → **Replica timeout**; CLI: **`--replica-timeout`**. |
 | **Networking** | Outbound **HTTPS** to Snyk, **`dev.azure.com`**, and your Table endpoint if using **`azure_table`**. |
-| **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. Set **`SNYK_API_BASE_URL`** when not on **SNYK-US-01** (default **`https://api.snyk.io`**). |
+| **Secrets** | **`SNYK_TOKEN`** and **`AZURE_DEVOPS_PAT`** via Key Vault references / Container Apps secrets, not the image. Set **`SNYK_API_BASE_URL`** and **`SNYK_APP_BASE_URL`** when not on **SNYK-US-01** (defaults **`https://api.snyk.io`**, **`https://app.snyk.io`**). |
 | **Identity** | Managed identity on the app when using **Azure Table** with **`DefaultAzureCredential`**. |
 
 ### Azure Container Apps: portal walkthrough (scheduled job)
@@ -374,6 +375,7 @@ ContainerAppConsoleLogs_CL
 | Symptom | What to check |
 | ------- | ------------- |
 | **Snyk HTTP 401 / `Authentication Failed`** | **`SNYK_TOKEN`** validity, expiry, and org/group access; also verify **`SNYK_API_BASE_URL`** (or **`snyk.api_base_url`**) matches your Snyk **region** — default is **`https://api.snyk.io`** (**SNYK-US-01**); other regions use different hosts ([regional API URLs](https://docs.snyk.io/developer-tools/snyk-api/rest-api/about-the-rest-api#api-urls)). A valid token against the wrong region often returns **401**. |
+| **“Open in Snyk” link wrong region or 404** | Verify **`SNYK_APP_BASE_URL`** (or **`snyk.app_base_url`**) matches your tenant’s web app host — default is **`https://app.snyk.io`** (**SNYK-US-01**); other regions use different hosts ([regional app URLs](https://docs.snyk.io/snyk-data-and-governance/regional-hosting-and-data-residency#regional-urls)). Set alongside **`SNYK_API_BASE_URL`** for non-US-01 tenants. |
 | **Azure DevOps `Authentication Failed`** | **`AZURE_DEVOPS_PAT`**, **Work items** read/write scope, org/project names vs PAT scope. |
 | **`sync` config errors** | **`snyk.group_id`** set; **`azure_boards.defaults`** structure; **`work_item_type`** and states; **`organization`** / **`project`** or **`org_mappings`** rows. |
 | **Table store startup failure** | Endpoint, table name, network, managed identity, **Storage Table Data Contributor**. |

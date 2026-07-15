@@ -55,6 +55,9 @@ snyk:
   # Optional: Snyk API origin for your region (default SNYK-US-01: https://api.snyk.io).
   # REST calls use {origin}/rest. See CONFIGURATION.md and Snyk regional API URL docs.
   # api_base_url: https://api.snyk.io
+  # Optional: Snyk web app origin for work item links (default SNYK-US-01: https://app.snyk.io).
+  # See CONFIGURATION.md and Snyk regional hosting URL docs.
+  # app_base_url: https://app.snyk.io
 
 # Local mapping DB for dev/tests (non-secret). Do not put tokens or PATs in this path.
 mapping_store: sqlite

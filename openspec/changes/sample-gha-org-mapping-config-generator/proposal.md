@@ -7,9 +7,9 @@ Operators who bulk-build **`azure_boards.org_mappings`** already use **`scripts/
 - Add **`.github/workflows/sample-generate-org-mapping-config.yml`**: a **manual** (`workflow_dispatch`) workflow that:
   - Checks out the repo, installs **Python 3.12+** and **`uv`**, runs **`uv sync`**, and invokes **`scripts/generate_org_mapping_config.py`**.
   - Reads **`SNYK_TOKEN`** from GitHub Actions **secrets** (never from workflow inputs or logs).
-  - Accepts operator inputs for **`group-id`**, CSV path, optional **`SNYK_API_BASE_URL`**, and output path.
+  - Accepts configuration from GitHub **repository variables** and **`SNYK_TOKEN`** secret (mapped to job environment variables).
   - Uploads the generated YAML as a **workflow artifact**; does **not** commit config to the branch.
-- Add a **committed example CSV** under **`examples/`** (placeholder ADO/Snyk org names only—no secrets). **`data/*.csv`** remains gitignored for operator-local files.
+- Add a **committed example CSV** at **`data/sample-orgs.csv`** (placeholder ADO/Snyk org names only—no secrets). Other **`data/*.csv`** files remain gitignored for operator-local use.
 - Document the workflow in **CONFIGURATION.md** (and a short **README** cross-link): required secrets, inputs, artifact download, and review-before-deploy reminder.
 
 ## Capabilities
@@ -24,7 +24,7 @@ Operators who bulk-build **`azure_boards.org_mappings`** already use **`scripts/
 
 ## Impact
 
-- **New files**: `.github/workflows/sample-generate-org-mapping-config.yml`, `examples/sample-orgs.csv` (or equivalent).
+- **New files**: `.github/workflows/sample-generate-org-mapping-config.yml`, `data/sample-orgs.csv`.
 - **Docs**: **CONFIGURATION.md**, **README.md** (one bullet).
 - **No runtime changes**: **`sync`**, config loader, and the generator CLI behavior stay unchanged unless a bug is found during implementation.
 - **Secrets**: Operators configure **`SNYK_TOKEN`** (and optionally regional **`SNYK_API_BASE_URL`**) as repo/org secrets; workflow MUST NOT echo tokens or write secrets into YAML output (existing CLI guarantee).

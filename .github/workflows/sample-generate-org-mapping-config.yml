@@ -1,0 +1,60 @@
+name: Sample — Generate org mapping config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SNYK_GROUP_ID: ${{ vars.SNYK_GROUP_ID }}
+      ORG_MAPPING_CSV_PATH: ${{ vars.ORG_MAPPING_CSV_PATH || 'data/sample-orgs.csv' }}
+      SNYK_API_BASE_URL: ${{ vars.SNYK_API_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Require SNYK_TOKEN
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "SNYK_TOKEN is not configured. Add it under Settings → Secrets and variables → Actions → Secrets." >&2
+            exit 1
+          fi
+
+      - name: Require SNYK_GROUP_ID
+        run: |
+          if [ -z "$SNYK_GROUP_ID" ]; then
+            echo "SNYK_GROUP_ID is not configured. Add it under Settings → Secrets and variables → Actions → Variables." >&2
+            exit 1
+          fi
+
+      - name: Generate config YAML
+        env:
+          CONFIG_OUTPUT: ${{ runner.temp }}/config.yaml
+        run: |
+          uv run python scripts/generate_org_mapping_config.py \
+            --input "$ORG_MAPPING_CSV_PATH" \
+            --group-id "$SNYK_GROUP_ID" \
+            --output "$CONFIG_OUTPUT"
+          echo "CONFIG_PATH=$CONFIG_OUTPUT" >> "$GITHUB_ENV"
+
+      - name: Upload generated config
+        uses: actions/upload-artifact@v4
+        with:
+          name: org-mapping-config
+          path: ${{ env.CONFIG_PATH }}

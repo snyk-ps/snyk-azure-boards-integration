@@ -8,13 +8,13 @@ Authentication SHALL use **`SNYK_TOKEN`** from GitHub Actions **secrets** only. 
 
 The workflow SHALL install **Python 3.12+** and **`uv`**, run **`uv sync`** from the repository root, execute the generator CLI, and upload the generated YAML file as a **workflow artifact** using a standard GitHub **`upload-artifact`** action. The workflow SHALL NOT commit generated configuration to the repository.
 
-The repository SHALL include a **committed example CSV** outside the gitignored **`data/*.csv`** pattern (e.g. under **`examples/`**) with the required headers **`ado_organization`**, **`ado_project`**, **`snyk_org_name`** and placeholder cell values suitable for documentation only.
+The repository SHALL include a **committed example CSV** at **`data/sample-orgs.csv`** (tracked via **`.gitignore`** exception) with the required headers **`ado_organization`**, **`ado_project`**, **`snyk_org_name`** and placeholder cell values suitable for documentation only.
 
-**CONFIGURATION.md** SHALL document: workflow file name, required secret **`SNYK_TOKEN`**, workflow inputs, how to download the artifact, and that operators must replace placeholder CSV values and review **`defaults`** / **`mapping_store`** comments before deploy.
+**CONFIGURATION.md** SHALL document: workflow file name, required secret **`SNYK_TOKEN`**, required and optional **repository variables** (**`SNYK_GROUP_ID`**, **`ORG_MAPPING_CSV_PATH`**, **`SNYK_API_BASE_URL`**), how to download the artifact, and that operators must replace placeholder CSV values and review **`defaults`** / **`mapping_store`** comments before deploy.
 
 #### Scenario: Manual run with valid secrets and inputs
 
-- **WHEN** an operator triggers the workflow with a valid **`SNYK_TOKEN`**, a **`group-id`** input, and a CSV path whose rows resolve to unique Snyk org display names in that group
+- **WHEN** an operator triggers the workflow with a valid **`SNYK_TOKEN`** secret, a configured **`SNYK_GROUP_ID`** repository variable, and a CSV path (from **`ORG_MAPPING_CSV_PATH`** or default) whose rows resolve to unique Snyk org display names in that group
 - **THEN** the job SHALL exit zero, and the workflow SHALL publish an artifact containing the generated YAML with populated **`azure_boards.org_mappings`**
 
 #### Scenario: Missing token

@@ -68,6 +68,40 @@ For many Snyk orgs, you can start from a CSV with columns **`ado_organization`**
 
 The default output is **`data/config.yaml`** (overwritten if present); use **`--output`** to choose another path. Review the generated **`azure_boards.defaults`** and **`mapping_store`** comments before deploying. Details: **`python scripts/generate_org_mapping_config.py --help`**.
 
+A committed structural example CSV lives at **`data/sample-orgs.csv`**. Replace placeholder **`snyk_org_name`** values with Snyk org **display names** (as shown in the Snyk UI); the generator matches them exactly after trimming whitespace. Other CSV files under **`data/`** are gitignored.
+
+#### GitHub Actions (sample)
+
+The repository includes a **manual** sample workflow: **`.github/workflows/sample-generate-org-mapping-config.yml`**. It mirrors the local command above using **`uv`** on **`ubuntu-latest`**, then uploads the generated YAML as a workflow artifact (no commit to the branch).
+
+**Setup**
+
+1. Under **Settings → Secrets and variables → Actions**, configure:
+   - **Secret** **`SNYK_TOKEN`**: token that can list orgs in your Snyk group.
+   - **Variable** **`SNYK_GROUP_ID`**: your Snyk Group UUID (required).
+   - **Variable** **`ORG_MAPPING_CSV_PATH`**: repo-relative CSV path (optional; defaults to **`data/sample-orgs.csv`** when unset).
+   - **Variable** **`SNYK_API_BASE_URL`**: optional API origin (e.g. **`https://api.eu.snyk.io`**) for non-US regions.
+2. In GitHub: **Actions** → **Sample — Generate org mapping config** → **Run workflow** (no run-time inputs; configuration comes from repository variables and secrets).
+
+**Repository configuration**
+
+| GitHub Actions setting | Environment variable | Required | Notes |
+| ---------------------- | -------------------- | -------- | ----- |
+| Secret **`SNYK_TOKEN`** | **`SNYK_TOKEN`** | yes | Never commit or log. |
+| Variable **`SNYK_GROUP_ID`** | **`SNYK_GROUP_ID`** | yes | Same value as CLI **`--group-id`**. |
+| Variable **`ORG_MAPPING_CSV_PATH`** | **`ORG_MAPPING_CSV_PATH`** | no | Defaults to **`data/sample-orgs.csv`**. |
+| Variable **`SNYK_API_BASE_URL`** | **`SNYK_API_BASE_URL`** | no | Regional API origin when not on US-01. |
+
+Replace placeholder **`snyk_org_name`** values in your CSV with real Snyk org display names before expecting success.
+
+**After the run**
+
+1. Open the workflow run → **Artifacts** → download **`org-mapping-config`**.
+2. Review **`azure_boards.defaults`**, **`mapping_store`** comments, and every **`org_mappings`** row.
+3. Deploy the YAML through your normal process (Azure Files mount, Blob, etc.). Do not commit secrets into the file.
+
+The sample workflow is **documentation-by-example** only: it is not triggered on every push or pull request.
+
 ## work_item_template
 
 Applies at **root** `work_item_template`, under **`azure_boards.defaults.work_item_template`**, and under **`org_mappings[].overrides.work_item_template`**. Merge order: defaults, root template, per-mapping overrides (**`json_patch`** lists concatenate).

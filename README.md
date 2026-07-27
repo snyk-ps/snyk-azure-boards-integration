@@ -126,7 +126,7 @@ Other CLI subcommands override the default args, for example: **`docker run … 
 - Precedence: defaults, then YAML, then environment variables, then CLI (see **[CONFIGURATION.md § Precedence](CONFIGURATION.md#precedence)**).
 - **Rollout:** It is **recommended** to scope your first **`sync`** runs to **one test Snyk org** so you can confirm configuration end-to-end before adding **`org_mappings`** rows or widening to the full group.
 - Start from **`data/sample-config.yaml`**. Full key list, **`azure_boards.org_mappings`**, mapping store, **`fetch`** / **`sync`** details: **[CONFIGURATION.md](CONFIGURATION.md)**.
-- **Bulk `org_mappings`:** To resolve **`snyk_org_id`** / **`snyk_org_slug`** from a CSV of ADO targets and Snyk org **names**, run **`scripts/generate_org_mapping_config.py`** (requires **`SNYK_TOKEN`**; see **[CONFIGURATION.md § Generating org_mappings from a CSV](CONFIGURATION.md#generating-org_mappings-from-a-csv)**).
+- **Bulk `org_mappings`:** To resolve **`snyk_org_id`** / **`snyk_org_slug`** from a CSV of ADO targets and Snyk org **names**, run **`scripts/generate_org_mapping_config.py`** locally (requires **`SNYK_TOKEN`**) or use the sample GitHub Actions workflow — see **[CONFIGURATION.md § Generating org_mappings from a CSV](CONFIGURATION.md#generating-org_mappings-from-a-csv)** (includes **GitHub Actions (sample)**).
 
 ## Usage
 

@@ -2,7 +2,7 @@
 
 - **CLI**: `scripts/generate_org_mapping_config.py` — requires **`--input`**, **`--group-id`**, **`SNYK_TOKEN`**, optional **`--output`** (default **`data/config.yaml`**) and **`SNYK_API_BASE_URL`** / **`--base-url`** (see `openspec/specs/csv-snyk-org-config-generator/spec.md`).
 - **Repo CI today**: only **`.github/workflows/release.yml`** (Docker release on tags); no Python/uv CI workflow yet.
-- **Local CSV policy**: **`data/*.csv`** is gitignored; committed sample belongs under **`examples/`**.
+- **Local CSV policy**: **`data/*.csv`** is gitignored except **`data/sample-orgs.csv`** (committed sample).
 
 ## Goals / Non-Goals
 
@@ -26,14 +26,14 @@
    **Rationale:** Avoids failed PR checks for contributors without Snyk secrets; matches “operator onboarding” use case.  
    **Alternatives:** `push` to `data/*.csv` (blocked by gitignore); `repository_dispatch` (more setup, out of scope for “sample”).
 
-2. **Secrets vs inputs**  
-   **Decision:** **`SNYK_TOKEN`** from **`secrets.SNYK_TOKEN`** only. **`group_id`**, CSV path, output path, and optional API base URL as **`workflow_dispatch` inputs** (non-secret).  
-   **Rationale:** Aligns with CLI auth model and project guidelines.  
-   **Alternatives:** **`SNYK_GROUP_ID`** secret (hides group id—unnecessary, group id is non-secret).
+2. **Secrets vs configuration**  
+   **Decision:** **`SNYK_TOKEN`** from **`secrets.SNYK_TOKEN`**. **`SNYK_GROUP_ID`**, **`ORG_MAPPING_CSV_PATH`**, and **`SNYK_API_BASE_URL`** from GitHub **repository variables** (`vars.*`), mapped to job **`env`**.  
+   **Rationale:** Aligns with CLI auth model and lets operators configure once under **Settings → Secrets and variables → Actions**.  
+   **Alternatives:** **`workflow_dispatch` inputs** (re-enter values each run); **`SNYK_GROUP_ID`** as secret (group id is non-secret).
 
 3. **Example CSV location**  
-   **Decision:** **`examples/sample-orgs.csv`** with placeholder values and a header comment row or README note that operators must replace names with their real Snyk org display names.  
-   **Rationale:** **`data/*.csv`** is gitignored by design.
+   **Decision:** **`data/sample-orgs.csv`** with placeholder values; document in **CONFIGURATION.md** that operators must replace names with their real Snyk org display names.  
+   **Rationale:** Aligns with the repo **`data/`** convention; **`!data/sample-orgs.csv`** in **`.gitignore`** keeps the sample tracked while other CSVs stay local.
 
 4. **Output handling**  
    **Decision:** Write to a path under **`${{ runner.temp }}/`** (e.g. **`generated-config.yaml`**) via **`--output`**, then **`actions/upload-artifact@v4`**.  

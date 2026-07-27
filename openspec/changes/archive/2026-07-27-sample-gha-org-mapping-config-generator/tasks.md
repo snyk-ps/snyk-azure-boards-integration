@@ -23,4 +23,4 @@
 
 ## 5. Final (OpenSpec)
 
-- [ ] Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/sample-gha-org-mapping-config-generator/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive sample-gha-org-mapping-config-generator`** (or project equivalent) to fold deltas into canonical specs.
+- [x] Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/sample-gha-org-mapping-config-generator/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive sample-gha-org-mapping-config-generator`** (or project equivalent) to fold deltas into canonical specs.

@@ -3,9 +3,7 @@
 ## Purpose
 
 Define normative behavior for the Python client that calls **Azure DevOps Work Item Tracking (WIT)** REST APIs for work item create, read, list-by-ids, update, and comments. REST paths, default `api-version` values for WIT vs comments, and media types are defined in `openspec/specs/integration-apis/spec.md`. Sync lifecycle rules (P2-FR-*) remain in `openspec/specs/sync-lifecycle/spec.md`; this capability covers **how** the application talks to Azure DevOps, not full reconciliation.
-
 ## Requirements
-
 ### Requirement: Python package layout for Azure DevOps API code
 
 All modules that perform HTTP calls to Azure DevOps WIT for this capability SHALL live under the **`src/integrations/azure_devops/`** package (submodules as needed). **Argparse definitions, subcommand registration, and wiring from parsed arguments to the client SHALL live under `src/commands/`** (submodules as needed). The process entry module **`src/main.py`** SHALL remain the executable entry point and SHALL delegate CLI construction and dispatch to `src/commands/` without embedding subcommand logic. Application and tests SHALL import the client from `integrations.azure_devops` (package root under `src/integrations/azure_devops/`) and command wiring from `src/commands/` as appropriate.
@@ -78,6 +76,7 @@ The client SHALL support the following operations aligned with `openspec/specs/i
 - **List work items by ids:** `GET …/wit/workitems?ids=…` with **at most 200** ids per request; if the caller supplies more than 200 ids in a single list call, the client SHALL fail before HTTP with a clear error.
 - **Update work item:** `PATCH …/wit/workitems/{id}` with **`application/json-patch+json`** body.
 - **Add work item comment:** `POST …/wit/workItems/{workItemId}/comments` using the preview `api-version` from `integration-apis`, with a request body including comment text as required by that API.
+- **List work item type fields:** `GET …/wit/workitemtypes/{type}/fields` with **`api-version=7.1`**, returning field reference names for the requested work item type in the given project.
 
 The client SHALL NOT implement **`workitemsbatch`**, **WIQL query**, or **Core get project** in v1.
 
@@ -91,7 +90,10 @@ The client SHALL NOT implement **`workitemsbatch`**, **WIQL query**, or **Core g
 - **WHEN** the caller requests list-by-ids with more than 200 ids in one invocation
 - **THEN** the client SHALL reject the call before sending HTTP
 
----
+#### Scenario: Work item type fields list uses WIT api version
+
+- **WHEN** the caller requests the field list for a work item type with default client settings
+- **THEN** the client SHALL issue `GET` with `api-version=7.1` per `integration-apis`
 
 ### Requirement: Normalized work item and comment records
 
@@ -187,3 +189,20 @@ The **`WorkItemsClient`** SHALL emit **one** Python **`logging`** audit line per
 
 - **WHEN** a WIT request fails with **401** or **403**
 - **THEN** an audit log record SHALL include status code and **SHALL NOT** log **`AZURE_DEVOPS_PAT`** or Basic auth material
+
+### Requirement: List work item type fields
+
+The Azure DevOps client SHALL support **`GET {organization}/{project}/_apis/wit/workitemtypes/{type}/fields?api-version=7.1`** to list fields defined for a work item type in a project. The public API SHALL expose field **reference names** (for example **`System.Description`**, **`Microsoft.VSTS.TCM.ReproSteps`**) for use by **`sync`** description-field resolution.
+
+#### Scenario: Field list returns reference names
+
+- **WHEN** the client calls the work item type fields list for a known type
+- **THEN** it SHALL return a collection including each field’s **`referenceName`** (or equivalent normalized name) from the API response
+
+#### Scenario: HTTP errors surface as client errors
+
+- **WHEN** the fields list request returns a non-success HTTP status
+- **THEN** the client SHALL raise a structured error suitable for sync startup failure without logging secrets
+
+---
+

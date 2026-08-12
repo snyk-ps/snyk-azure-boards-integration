@@ -37,9 +37,7 @@ Populate each created/updated work item with at least:
 |----|-------------|
 | **P2-FR-7** | Maintain a **unique, stable mapping** between each Snyk finding and its Azure Boards work item (one finding — one active work item per policy in P2-FR-8). |
 | **P2-FR-10** | Support **configurable tags** on work items (e.g. product type, `Snyk`, or other agreed labels). |
-
-## Normative requirements
-
+## Requirements
 ### Requirement: Persist Snyk project display metadata on mapping rows
 
 The **`sync`** run SHALL persist **`snyk_project_name`** (from **`GET /orgs/{org_id}/projects/{project_id}`** **`attributes.name`**) and **`snyk_project_origin`** (from **`attributes.origin`**) on the **issues sync persistence** row for the natural key, updating values when refreshed per **`design.md`**, so routine sync loops avoid repeating project GET for unchanged rows.
@@ -149,14 +147,14 @@ When the Issues API response includes JSON:API **`included`** resources that res
 
 ### Requirement: Optional work item description appendix from configuration
 
-When **`sync`** assembles plain text for **`System.Description`**, it SHALL first produce the default sections defined by **`sync-lifecycle`** (finding metadata, Snyk link block, etc.). When the effective **`work_item_description_appendix`** string per **`application-config`** is **non-empty** after stripping leading and trailing whitespace, **`sync`** SHALL append **`"\n\n"`** followed by that appendix to the plain-text assembly **before** HTML conversion and **before** applying the maximum description length limit.
+When **`sync`** assembles plain text for the **effective work item description field**, it SHALL first produce the default sections defined by **`sync-lifecycle`** (finding metadata, Snyk link block, etc.). When the effective **`work_item_description_appendix`** string per **`application-config`** is **non-empty** after stripping leading and trailing whitespace, **`sync`** SHALL append **`"\n\n"`** followed by that appendix to the plain-text assembly **before** HTML conversion and **before** applying the maximum description length limit.
 
 When the effective appendix is empty (omitted, empty string, or whitespace-only after strip), **`sync`** SHALL NOT add extra paragraphs for this feature.
 
 #### Scenario: Appendix non-empty adds trailing paragraph block
 
 - **WHEN** merged configuration supplies a non-empty **`work_item_description_appendix`** for the active routing context
-- **THEN** the plain-text **`System.Description`** assembly SHALL end with a block separated from prior content by at least one blank line and SHALL include the appendix text verbatim (subject to truncation)
+- **THEN** the plain-text description assembly for the effective description field SHALL end with a block separated from prior content by at least one blank line and SHALL include the appendix text verbatim (subject to truncation)
 
 #### Scenario: Appendix empty leaves assembly unchanged
 
@@ -167,29 +165,29 @@ When the effective appendix is empty (omitted, empty string, or whitespace-only 
 
 ### Requirement: System.Description is HTML-safe for Azure Boards rendering
 
-The JSON Patch value for **`System.Description`** SHALL be HTML suitable for Azure DevOps work item fields: plain-text assembly split on blank lines into paragraphs (**`<p>...</p>`**), single line breaks within a paragraph as **`<br />`**, and **HTML entity escaping** for dynamic/API-supplied text **and** for YAML-supplied **`work_item_description_appendix`** text so **`System.Title`** and **`System.Description`** cannot inject markup from issue payloads or configuration.
+The JSON Patch value written to the **effective work item description field** SHALL be HTML suitable for Azure DevOps rich-text fields: plain-text assembly split on blank lines into paragraphs (**`<p>...</p>`**), single line breaks within a paragraph as **`<br />`**, and **HTML entity escaping** for dynamic/API-supplied text **and** for YAML-supplied **`work_item_description_appendix`** text so **`System.Title`** and the description field value cannot inject markup from issue payloads or configuration.
 
 Within each paragraph block (except the dedicated **Open in Snyk** block described in **P2-FR-5.4**), **`http://`** and **`https://`** URL substrings in the plain-text assembly SHALL be rendered as HTML hyperlinks (**`<a href="…">…</a>`**) with **`href`** and visible link text HTML-escaped. Only **`http://`** and **`https://`** schemes SHALL be linkified; other schemes (for example **`javascript:`**) SHALL remain escaped literal text. Trailing punctuation immediately following a detected URL (for example **`.`**, **`,`**, **`;`**, **`:`**, **`)`**) SHALL NOT be included in **`href`**.
 
 #### Scenario: Plain assembly becomes paragraphs
 
 - **WHEN** plain-text assembly contains two blocks separated by a blank line
-- **THEN** the **`System.Description`** patch value SHALL contain two **`<p>`** paragraphs (or equivalent) preserving separation in the Boards web UI
+- **THEN** the description-field patch value SHALL contain two **`<p>`** paragraphs (or equivalent) preserving separation in the Boards web UI
 
 #### Scenario: Appendix text is escaped like other description content
 
 - **WHEN** **`work_item_description_appendix`** contains characters that require HTML escaping (for example **`&`**, **`<`**, **`>`**) outside of an **`http(s)`** URL
-- **THEN** the **`System.Description`** patch value SHALL escape those characters appropriately so they render as literal characters in Azure Boards
+- **THEN** the description-field patch value SHALL escape those characters appropriately so they render as literal characters in Azure Boards
 
 #### Scenario: Appendix https URL becomes a hyperlink
 
 - **WHEN** **`work_item_description_appendix`** contains a substring **`https://`** URL
-- **THEN** the **`System.Description`** patch value SHALL include an **`<a href="…">`** element for that URL with escaped **`href`** and escaped visible link text
+- **THEN** the description-field patch value SHALL include an **`<a href="…">`** element for that URL with escaped **`href`** and escaped visible link text
 
 #### Scenario: Non-http schemes are not linkified
 
 - **WHEN** plain-text assembly contains **`javascript:alert(1)`** or similar non-**`http(s)`** scheme
-- **THEN** the **`System.Description`** patch value SHALL NOT emit a clickable **`href`** for that substring
+- **THEN** the description-field patch value SHALL NOT emit a clickable **`href`** for that substring
 
 ---
 
@@ -326,7 +324,7 @@ Tags SHALL be applied using Azure DevOps–compatible JSON Patch for the configu
 
 ### Requirement: Snyk-derived severity and finding-type work item tags
 
-For each **origin-included** issue where **`sync`** performs an Azure DevOps work item **create** or **update** through the same JSON Patch assembly used for **`System.Title`**, **`System.Description`**, **`System.State`**, and template operations, the application SHALL incorporate **managed** tags derived from the **current** Snyk issue payload for that run into the combined tag list (and therefore into **`System.Tags`** when the combined list is non-empty):
+For each **origin-included** issue where **`sync`** performs an Azure DevOps work item **create** or **update** through the same JSON Patch assembly used for **`System.Title`**, the **effective work item description field**, **`System.State`**, and template operations, the application SHALL incorporate **managed** tags derived from the **current** Snyk issue payload for that run into the combined tag list (and therefore into **`System.Tags`** when the combined list is non-empty):
 
 - **Severity:** at most one tag of the form **`Snyk-Severity-{level}`** where **`level`** is **`low`**, **`medium`**, **`high`**, or **`critical`**, normalized from **`effective_severity_level`** (or equivalent field on the normalized issue record). If the level is missing or not one of these after normalization, **no** severity managed tag SHALL be emitted.
 - **Finding type:** at most one tag of the form **`Snyk-Type-{suffix}`**. The suffix SHALL map deterministically from Snyk issue **`attributes.type`** after normalization (**strip**, **lowercase**, **hyphens/spaces→underscore**). Supported REST enums include **`package_vulnerability`**, **`license`**, **`cloud`**, **`code`**, **`custom`**, and **`config`**. The application SHALL emit **`Snyk-Type-license`** when the enum is **`license`** (synonym **`licensing`** maps like **`license`**). It SHALL emit **`Snyk-Type-custom`** when the enum is **`custom`**. It SHALL map **`package_vulnerability`** to **`Snyk-Type-open_source`** (aligning OSS-style findings). It SHALL map **`cloud`** and **`config`** to **`Snyk-Type-iac`**. It SHALL map **`code`** to **`Snyk-Type-code`**. Implementation MAY recognize additional synonyms (for example **`container`** → **`Snyk-Type-container`**) documented in **`README.md`**. Values that normalize to unrecognized tokens omit the managed type tag.
@@ -366,7 +364,7 @@ The human-readable text used for **`System.Title`** on create SHALL be **`{targe
 - **`issue`** is **`attributes.title`** when non-empty; otherwise the primary package line (**`package@version`**); otherwise a short fallback label.
 - **`target`** SHALL prefer **`snyk_project_name`** persisted on the mapping row when non-empty; next **`snyk_project_name`** on the normalized/enriched issue record when non-empty; next **`{effective_organization} / {effective_project}`** from merged **`azure_boards.defaults`** and **`org_mappings`** context. When no **`target`** label can be resolved, **`System.Title`** SHALL be **`issue`** only (no **` - `** prefix).
 
-For **`System.Description`**, the application SHALL assemble content in **section blocks** (blank-line-separated in plain assembly before HTML wrapping) so operators see distinct paragraphs in Azure Boards. Assembly SHALL include at minimum:
+For the **effective work item description field**, the application SHALL assemble content in **section blocks** (blank-line-separated in plain assembly before HTML wrapping) so operators see distinct paragraphs in Azure Boards. Assembly SHALL include at minimum:
 
 1. **Context:** **Snyk project** display name and **origin** when known (**`snyk_project_name`**, **`snyk_project_origin`** from mapping row or APIs), **severity**, **Snyk issue key**.
 2. **Finding:** primary package and optional path hints from **`coordinates[]`** when present; for **code** issues, **file + lines** per **`sourceLocation`** when present.
@@ -374,7 +372,7 @@ For **`System.Description`**, the application SHALL assemble content in **sectio
 4. **`attributes.description`** when present (vulnerability narrative).
 5. **Classification:** **P2-FR-5.2**, **P2-FR-5.3**, and fix availability (**P2-FR-5.5** subset—see below).
 
-When the issue record produced by **list** operations omits **`attributes.description`** or **`coordinates[].remedies`** (or other fields needed for the paragraphs above), the application SHALL issue **`GET /groups/{group_id}/issues/{issue_id}`** or **`GET /orgs/{org_id}/issues/{issue_id}`** in the **same** scope as the list operation for that issue’s **`rest_issue_id`** (JSON:API **`data.id`**), merge **`attributes`** and **`coordinates`** from the GET response into the working issue view per the active change **`design.md`**, then assemble **`System.Description`**. The client SHALL use the same **`version`** query parameter as documented for Issues API requests.
+When the issue record produced by **list** operations omits **`attributes.description`** or **`coordinates[].remedies`** (or other fields needed for the paragraphs above), the application SHALL issue **`GET /groups/{group_id}/issues/{issue_id}`** or **`GET /orgs/{org_id}/issues/{issue_id}`** in the **same** scope as the list operation for that issue’s **`rest_issue_id`** (JSON:API **`data.id`**), merge **`attributes`** and **`coordinates`** from the GET response into the working issue view per the active change **`design.md`**, then assemble the description body for the effective description field. The client SHALL use the same **`version`** query parameter as documented for Issues API requests.
 
 If fields remain absent after GET, the description SHALL still include all other available metadata; the run SHALL NOT fail solely because narrative or remedies are missing.
 
@@ -391,17 +389,17 @@ If fields remain absent after GET, the description SHALL still include all other
 #### Scenario: Description includes narrative when attributes.description is present
 
 - **WHEN** the working issue attributes include non-empty **`description`**
-- **THEN** **`System.Description`** SHALL include that text in addition to other required sections
+- **THEN** the effective description field body SHALL include that text in addition to other required sections
 
 #### Scenario: GET issue enriches payload when list omits remedies or description
 
 - **WHEN** the list payload lacks **`description`** or **`remedies`** and GET-by-id returns them for the same issue
-- **THEN** **`System.Description`** SHALL incorporate those fields after the GET merge
+- **THEN** the effective description field body SHALL incorporate those fields after the GET merge
 
 #### Scenario: Code issue includes file and line location when sourceLocation present
 
 - **WHEN** **`sourceLocation.file`** and line fields exist under **`coordinates[].representations[]`**
-- **THEN** **`System.Description`** SHALL include human-readable file path and line range for that finding
+- **THEN** the effective description field body SHALL include human-readable file path and line range for that finding
 
 ---
 
@@ -420,7 +418,7 @@ The work item metadata SHALL record the Snyk **`attributes.type`** string **verb
 
 The application SHALL extract **CWE** identifiers from **`attributes.classes`** entries where **`source`** equals **`CWE`**. It SHALL extract **CVE** identifiers from **`attributes.problems`** entries whose **`id`** matches the pattern **`CVE-*`**, and SHALL include each such problem’s **`url`** in work item text or fields when present.
 
-When a CVE **`url`** appears in **`System.Description`**, it SHALL be rendered as an HTML hyperlink per **System.Description is HTML-safe for Azure Boards rendering** (in addition to appearing alongside the CVE id in plain-text assembly).
+When a CVE **`url`** appears in the effective work item description field body, it SHALL be rendered as an HTML hyperlink per **System.Description is HTML-safe for Azure Boards rendering** (in addition to appearing alongside the CVE id in plain-text assembly).
 
 #### Scenario: CVE includes url when present
 
@@ -430,7 +428,7 @@ When a CVE **`url`** appears in **`System.Description`**, it SHALL be rendered a
 #### Scenario: CVE NVD url is clickable in description
 
 - **WHEN** plain-text assembly includes a CVE line containing an **`https://`** URL from **`attributes.problems`**
-- **THEN** the **`System.Description`** patch value SHALL include an **`<a href="…">`** element for that URL
+- **THEN** the description-field patch value SHALL include an **`<a href="…">`** element for that URL
 
 ---
 
@@ -451,7 +449,7 @@ The fragment SHALL be **`#issue-`** immediately followed by **`attributes.key`**
 
 The application SHALL NOT emit **`https://app.snyk.io/group/{group_id}/issues/{id}`** or other deprecated **best-effort** link patterns as the primary **P2-FR-5.4** link line.
 
-When the URL is rendered inside **`System.Description`**, it SHALL appear as an HTML **hyperlink** (**`<a href="...">...</a>`**) with **href** set to the canonical URL and link text that identifies the issue in Snyk, subject to the same HTML entity escaping rules as other dynamic description content (**HTML-safe** assembly). The **"Open in Snyk"** description block SHALL receive the same hyperlink treatment regardless of the configured **`app_base_url`** origin.
+When the URL is rendered inside the **effective work item description field**, it SHALL appear as an HTML **hyperlink** (**`<a href="...">...</a>`**) with **href** set to the canonical URL and link text that identifies the issue in Snyk, subject to the same HTML entity escaping rules as other dynamic description content (**HTML-safe** assembly). The **"Open in Snyk"** description block SHALL receive the same hyperlink treatment regardless of the configured **`app_base_url`** origin.
 
 #### Scenario: Link uses config slug and API identifiers
 
@@ -470,10 +468,8 @@ When the URL is rendered inside **`System.Description`**, it SHALL appear as an 
 
 #### Scenario: Description renders link as HTML anchor
 
-- **WHEN** the **P2-FR-5.4** URL is written into **`System.Description`**
+- **WHEN** the **P2-FR-5.4** URL is written into the effective work item description field
 - **THEN** the stored HTML SHALL include a single **`a`** element with **`href`** equal to the canonical HTTPS URL (escaped as required)
-
----
 
 ### Requirement: P2-FR-5.5 fix availability and fix guidance
 
@@ -572,3 +568,41 @@ The **`sync`** orchestration SHALL emit exactly **one** summary log record at th
 
 - **WHEN** **`sync`** is invoked once
 - **THEN** exactly one summary log with **`sync_duration_seconds`** SHALL be emitted for that invocation
+
+### Requirement: Effective work item description field resolution
+
+For each ADO routing context (**organization**, **project**, effective **`work_item_type`**, and merged **`work_item_description_field`** configuration), **`sync`** SHALL determine an **effective description field reference name** used for all Snyk narrative JSON Patch operations (create and update) in that context.
+
+When **`work_item_description_field`** is **not** configured (auto mode), **`sync`** SHALL query Azure DevOps for fields defined on the effective work item type and SHALL select the first available reference name in this order:
+
+1. **`System.Description`**
+2. **`Microsoft.VSTS.TCM.ReproSteps`**
+
+If neither reference name is present, **`sync`** SHALL exit non-zero **before** the per-issue loop with a clear, non-secret error identifying the organization, project, work item type, and attempted reference names.
+
+When **`work_item_description_field`** **is** configured to a non-empty string, **`sync`** SHALL use that reference name directly without fallback. When ADO is reachable at startup, **`sync`** SHALL validate that the explicit reference name appears on the effective work item type’s field list and SHALL exit non-zero before the per-issue loop if validation fails.
+
+Resolution SHALL occur at **`sync`** startup for each distinct routing context used in the run and MAY be cached for the duration of that run.
+
+#### Scenario: Auto mode selects Description for Task
+
+- **WHEN** auto mode is active, the effective work item type is **`Task`**, and **`System.Description`** exists on that type
+- **THEN** the effective description field SHALL be **`System.Description`**
+
+#### Scenario: Auto mode selects Repro Steps for Bug without Description
+
+- **WHEN** auto mode is active, the effective work item type is **`Bug`**, **`System.Description`** is not defined on that type, and **`Microsoft.VSTS.TCM.ReproSteps`** is defined
+- **THEN** the effective description field SHALL be **`Microsoft.VSTS.TCM.ReproSteps`**
+
+#### Scenario: Explicit override bypasses fallback
+
+- **WHEN** merged configuration sets **`work_item_description_field`** to **`Microsoft.VSTS.TCM.ReproSteps`** and **`System.Description`** also exists on the type
+- **THEN** the effective description field SHALL be **`Microsoft.VSTS.TCM.ReproSteps`** only
+
+#### Scenario: Auto mode fails when no supported field exists
+
+- **WHEN** auto mode is active and neither **`System.Description`** nor **`Microsoft.VSTS.TCM.ReproSteps`** is defined on the effective work item type
+- **THEN** **`sync`** SHALL fail before processing issues
+
+---
+

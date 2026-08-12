@@ -33,4 +33,4 @@
 
 ## 7. Archive (human)
 
-- [ ] 7.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/work-item-description-field/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive work-item-description-field`** (or project equivalent) to fold deltas into canonical specs.
+- [x] 7.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/work-item-description-field/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive work-item-description-field`** (or project equivalent) to fold deltas into canonical specs.

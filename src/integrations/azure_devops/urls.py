@@ -84,6 +84,23 @@ def work_item_update_url(
     return f"{root}/{org}/{proj}/_apis/wit/workitems/{wid}?{q}"
 
 
+def work_item_type_fields_url(
+    base_url: str,
+    organization: str,
+    project: str,
+    work_item_type: str,
+    *,
+    api_version: str,
+) -> str:
+    """Build URL for ``GET .../wit/workitemtypes/{type}/fields``."""
+    root = normalize_devops_base_url(base_url)
+    org = _segment(organization)
+    proj = _segment(project)
+    wit = quote(work_item_type.strip(), safe="")
+    q = urlencode({"api-version": api_version})
+    return f"{root}/{org}/{proj}/_apis/wit/workitemtypes/{wit}/fields?{q}"
+
+
 def work_item_comment_url(
     base_url: str,
     organization: str,

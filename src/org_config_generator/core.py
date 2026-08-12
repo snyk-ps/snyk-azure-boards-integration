@@ -89,6 +89,7 @@ DEFAULTS_COMMENT_BLOCK = """
     # work_item_type: Task
     # work_item_state_active: New
     # work_item_state_closed: Closed
+    # work_item_description_field: Microsoft.VSTS.TCM.ReproSteps
     # sync_included_snyk_origins: "github,azure-repos,gitlab"
     # work_item_description_appendix: |
     #   Internal: request Snyk access at https://example.internal/access

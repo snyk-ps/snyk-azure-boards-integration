@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from config.errors import ConfigError
+from config.field_refs import normalize_work_item_description_field
 from config.models import (
     DEFAULT_MAPPING_STORE,
     DEFAULT_SQLITE_PATH,
@@ -54,6 +55,7 @@ _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
         "work_item_type",
         "work_item_state_active",
         "work_item_state_closed",
+        "work_item_description_field",
     },
 )
 
@@ -458,6 +460,11 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         hard_default="Closed",
     )
 
+    wit_desc_field = normalize_work_item_description_field(
+        defaults_raw.get("work_item_description_field"),
+        field_prefix="azure_boards.defaults.work_item_description_field",
+    )
+
     wit_tmpl = defaults_raw.get("work_item_template")
     if wit_tmpl is None:
         wit_tmpl = {}
@@ -487,6 +494,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         work_item_type=wit_type,
         work_item_state_active=wit_active,
         work_item_state_closed=wit_closed,
+        work_item_description_field=wit_desc_field,
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,

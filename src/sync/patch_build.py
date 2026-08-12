@@ -12,6 +12,7 @@ _URL_TRAILING_PUNCT = ".,;:)"
 from snyk.constants import DEFAULT_APP_ORIGIN
 from snyk.urls import normalize_app_origin
 
+from config.field_refs import DESCRIPTION_FIELD_SYSTEM
 from sync.work_item_tags import (
     combine_tags_for_work_item,
     managed_severity_tag_from_level,
@@ -151,6 +152,7 @@ def build_create_patch(
     issue_effective_severity_level: str | None = None,
     issue_snyk_type: str | None = None,
     app_base_url: str = DEFAULT_APP_ORIGIN,
+    description_field: str = DESCRIPTION_FIELD_SYSTEM,
 ) -> list[dict[str, Any]]:
     """
     JSON Patch for ``POST`` work item create.
@@ -161,7 +163,7 @@ def build_create_patch(
         {"op": "add", "path": "/fields/System.Title", "value": title},
         {
             "op": "add",
-            "path": "/fields/System.Description",
+            "path": f"/fields/{description_field}",
             "value": _ado_system_description_html(
                 description,
                 app_base_url=app_base_url,
@@ -198,13 +200,14 @@ def build_update_patch(
     issue_effective_severity_level: str | None = None,
     issue_snyk_type: str | None = None,
     app_base_url: str = DEFAULT_APP_ORIGIN,
+    description_field: str = DESCRIPTION_FIELD_SYSTEM,
 ) -> list[dict[str, Any]]:
     """JSON Patch for ``PATCH`` update (replace built-ins, tags, then template ops)."""
     ops: list[dict[str, Any]] = [
         {"op": "replace", "path": "/fields/System.Title", "value": title},
         {
             "op": "replace",
-            "path": "/fields/System.Description",
+            "path": f"/fields/{description_field}",
             "value": _ado_system_description_html(
                 description,
                 app_base_url=app_base_url,

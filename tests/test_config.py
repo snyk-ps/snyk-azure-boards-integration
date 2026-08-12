@@ -415,6 +415,93 @@ def test_azure_boards_org_project_env_overrides_yaml(
     assert c.azure_boards.project == "from-env-p"
 
 
+def test_work_item_description_field_omitted_is_auto(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    work_item_type: Bug\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.work_item_description_field is None
+
+
+def test_work_item_description_field_explicit_override(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    work_item_description_field: Microsoft.VSTS.TCM.ReproSteps\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert (
+        c.azure_boards.defaults.work_item_description_field
+        == "Microsoft.VSTS.TCM.ReproSteps"
+    )
+
+
+def test_work_item_description_field_strips_fields_prefix(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    work_item_description_field: /fields/System.Description\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.work_item_description_field == "System.Description"
+
+
+def test_work_item_description_field_rejects_non_string(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    work_item_description_field: 42\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="work_item_description_field"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_rejects_flat_work_item_description_field(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  work_item_description_field: System.Description\n"
+        "  defaults:\n"
+        "    work_item_type: Task\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="not supported"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_org_mapping_override_work_item_description_field(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  org_mappings:\n"
+        "    - organization: ado-o\n"
+        "      project: ado-p\n"
+        "      snyk_org_id: org-uuid-1\n"
+        "      snyk_org_slug: my-slug\n"
+        "      overrides:\n"
+        "        work_item_description_field: Microsoft.VSTS.TCM.ReproSteps\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    from sync.effective import boards_for_org_mapping
+
+    boards = boards_for_org_mapping(c, c.azure_boards.org_mappings[0])
+    assert (
+        boards.defaults.work_item_description_field
+        == "Microsoft.VSTS.TCM.ReproSteps"
+    )
+
+
 def test_rejects_flat_work_item_keys_under_azure_boards(tmp_path: Path) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(

@@ -17,6 +17,7 @@ from observability.sync_context import reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 
 from sync.azure_batch import batch_get_work_items
+from sync.description_field import DescriptionFieldResolver, warm_description_fields_for_sync
 from sync.effective import (
     boards_for_org_mapping,
     effective_snyk_org_slug,
@@ -176,10 +177,18 @@ def _run_sync_body(
 ) -> int:
     """Core sync loop after environment validation (no sync_run_id wrapper)."""
     ab = config.azure_boards
+    description_fields = DescriptionFieldResolver(wit_client)
+    warm_description_fields_for_sync(config, description_fields)
 
     if ab.org_mappings:
         for m in ab.org_mappings:
             boards = boards_for_org_mapping(config, m)
+            description_field = description_fields.resolve(
+                boards.organization,
+                boards.project,
+                boards.work_item_type,
+                boards.defaults.work_item_description_field,
+            )
             levels = effective_severity_levels_from_threshold(boards.severity_threshold)
             list_params = GroupIssueListParams(effective_severity_levels=levels)
             template = effective_work_item_template(config, m.overrides, boards=boards)
@@ -207,6 +216,7 @@ def _run_sync_body(
                 ado_proj=boards.project.strip(),
                 boards=boards,
                 template=template,
+                description_field=description_field,
                 wit_client=wit_client,
                 store=store,
                 log=log,
@@ -223,6 +233,12 @@ def _run_sync_body(
 
     group_id = config.snyk.group_id.strip()
     boards_flat = ab
+    description_field = description_fields.resolve(
+        boards_flat.organization,
+        boards_flat.project,
+        boards_flat.work_item_type,
+        boards_flat.defaults.work_item_description_field,
+    )
     levels = effective_severity_levels_from_threshold(boards_flat.severity_threshold)
     list_params = GroupIssueListParams(effective_severity_levels=levels)
     template = effective_work_item_template(config, None, boards=boards_flat)
@@ -244,6 +260,7 @@ def _run_sync_body(
         ado_proj=boards_flat.project.strip(),
         boards=boards_flat,
         template=template,
+        description_field=description_field,
         wit_client=wit_client,
         store=store,
         log=log,
@@ -266,6 +283,7 @@ def _run_sync_batch(
     ado_proj: str,
     boards: AzureBoardsConfig,
     template: dict[str, Any],
+    description_field: str,
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
@@ -310,6 +328,7 @@ def _run_sync_batch(
                 ado_proj=ado_proj,
                 boards=boards,
                 template=template,
+                description_field=description_field,
                 wit_client=wit_client,
                 store=store,
                 log=log,
@@ -335,6 +354,7 @@ def _sync_one_issue(
     ado_proj: str,
     boards: AzureBoardsConfig,
     template: dict[str, Any],
+    description_field: str,
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
@@ -477,6 +497,7 @@ def _sync_one_issue(
             issue_effective_severity_level=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
             app_base_url=app_base_url,
+            description_field=description_field,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -544,6 +565,7 @@ def _sync_one_issue(
                     issue_effective_severity_level=severity_level_for_tags,
                     issue_snyk_type=issue_snyk_type,
                     app_base_url=app_base_url,
+                    description_field=description_field,
                 )
                 updated = wit_client.update_work_item(
                     ado_org,
@@ -594,6 +616,7 @@ def _sync_one_issue(
             issue_effective_severity_level=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
             app_base_url=app_base_url,
+            description_field=description_field,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -665,6 +688,7 @@ def _sync_one_issue(
         issue_effective_severity_level=severity_level_for_tags,
         issue_snyk_type=issue_snyk_type,
         app_base_url=app_base_url,
+        description_field=description_field,
     )
     updated = wit_client.update_work_item(ado_org, ado_proj, wid, patches)
     wst = str(updated.get("work_item_status") or "")

@@ -45,6 +45,40 @@ def _work_item_json(wid: int = 7, *, state: str | None = "Active") -> bytes:
     return json.dumps(doc).encode("utf-8")
 
 
+def test_list_work_item_type_field_names_parses_reference_names() -> None:
+    body = json.dumps(
+        {
+            "value": [
+                {"referenceName": "System.Description"},
+                {"referenceName": "Microsoft.VSTS.TCM.ReproSteps"},
+            ],
+        },
+    ).encode("utf-8")
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        assert "/workitemtypes/Bug/fields" in req.full_url
+        return _FakeResp(body)
+
+    client = WorkItemsClient(pat="x", opener=opener)
+    names = client.list_work_item_type_field_names("org", "proj", "Bug")
+    assert names == ["System.Description", "Microsoft.VSTS.TCM.ReproSteps"]
+
+
+def test_list_work_item_type_field_names_http_error() -> None:
+    def opener(req: Request, timeout: float = 0) -> None:
+        raise HTTPError(
+            req.full_url,
+            404,
+            "Not Found",
+            HTTPMessage(),
+            None,
+        )
+
+    client = WorkItemsClient(pat="x", opener=opener)
+    with pytest.raises(AzureDevOpsClientError):
+        client.list_work_item_type_field_names("org", "proj", "Missing")
+
+
 def test_get_work_item_requires_pat(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AZURE_DEVOPS_PAT", raising=False)
     client = WorkItemsClient()

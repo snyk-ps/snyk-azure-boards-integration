@@ -31,6 +31,21 @@ def test_filter_assignee_removes_assigned_to_when_not_supplied() -> None:
     assert out[0]["path"] == "/fields/System.Title"
 
 
+def test_build_create_patch_uses_custom_description_field() -> None:
+    ops = build_create_patch(
+        title="T",
+        description="Body",
+        active_state="New",
+        template={},
+        description_field="Microsoft.VSTS.TCM.ReproSteps",
+    )
+    desc_op = next(
+        o for o in ops if o.get("path") == "/fields/Microsoft.VSTS.TCM.ReproSteps"
+    )
+    assert desc_op["value"] == "<p>Body</p>"
+    assert not any(o.get("path") == "/fields/System.Description" for o in ops)
+
+
 def test_build_create_patch_includes_tags_and_template_ops() -> None:
     tpl = {
         "tags": ["Snyk", "security"],

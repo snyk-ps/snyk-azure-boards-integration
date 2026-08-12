@@ -39,6 +39,7 @@ from integrations.azure_devops.urls import (
     work_item_comment_url,
     work_item_create_url,
     work_item_get_url,
+    work_item_type_fields_url,
     work_items_list_url,
     work_item_update_url,
 )
@@ -327,6 +328,36 @@ class WorkItemsClient:
         )
         doc = self._request_json("GET", url, mutating=False)
         return normalize_work_item_document(doc)
+
+    def list_work_item_type_field_names(
+        self,
+        organization: str,
+        project: str,
+        work_item_type: str,
+    ) -> list[str]:
+        """List field reference names defined for a work item type in a project."""
+        url = work_item_type_fields_url(
+            self._base_url,
+            organization,
+            project,
+            work_item_type,
+            api_version=self._wit_api_version,
+        )
+        doc = self._request_json("GET", url, mutating=False)
+        value = doc.get("value")
+        if not isinstance(value, list):
+            raise AzureDevOpsClientError(
+                "Unexpected work item type fields response shape",
+                status_code=None,
+            )
+        out: list[str] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            ref = item.get("referenceName")
+            if isinstance(ref, str) and ref.strip():
+                out.append(ref.strip())
+        return out
 
     def list_work_items_by_ids(
         self,

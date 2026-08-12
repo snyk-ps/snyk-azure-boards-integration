@@ -35,6 +35,7 @@ def test_run_sync_uses_org_iterator_when_org_mappings(
     store = SqliteMappingStore(database_path=str(db))
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
 
     iter_org = MagicMock(return_value=iter([]))
     iter_group = MagicMock(return_value=iter([]))
@@ -81,6 +82,7 @@ def test_run_sync_uses_group_iterator_when_no_mappings(
     store = SqliteMappingStore(database_path=str(db))
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
 
     iter_org = MagicMock(return_value=iter([]))
     iter_group = MagicMock(return_value=iter([]))
@@ -120,6 +122,7 @@ def test_run_sync_emits_sync_summary_json(
     store = SqliteMappingStore(database_path=str(db))
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
 
     def opener(*_a, **_k):
         from tests.test_client import _FakeResp
@@ -172,6 +175,7 @@ def test_run_sync_http_audits_share_sync_run_id(
     store = SqliteMappingStore(database_path=str(db))
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
 
     def opener(*_a, **_k):
         from tests.test_client import _FakeResp

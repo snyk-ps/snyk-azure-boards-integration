@@ -47,6 +47,7 @@ def test_run_sync_does_not_call_ado_when_origin_excluded(
     store = SqliteMappingStore(database_path=str(db))
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
 
     rec = {
         "org_id": "org-uuid",
@@ -143,6 +144,7 @@ def test_run_sync_creates_when_reincluded_row_has_empty_work_item_id(
 
     issues = IssuesClient(token="t")
     wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
     wit.create_work_item.return_value = {
         "work_item_id": "701",
         "work_item_status": "New",

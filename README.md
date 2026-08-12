@@ -379,6 +379,7 @@ ContainerAppConsoleLogs_CL
 | **Azure DevOps `Authentication Failed`** | **`AZURE_DEVOPS_PAT`**, **Work items** read/write scope, org/project names vs PAT scope. |
 | **`sync` config errors** | **`snyk.group_id`** set; **`azure_boards.defaults`** structure; **`work_item_type`** and states; **`organization`** / **`project`** or **`org_mappings`** rows. |
 | **Table store startup failure** | Endpoint, table name, network, managed identity, **Storage Table Data Contributor**. |
+| **Bug work item body empty** | By default **`sync`** writes Snyk content to **`System.Description`**, then **`Microsoft.VSTS.TCM.ReproSteps`** when Description is absent on the type. For **Bug**, omit **`work_item_description_field`** (auto) or set **`work_item_description_field: Microsoft.VSTS.TCM.ReproSteps`** under **`azure_boards.defaults`** or **`org_mappings[].overrides`**. See **[CONFIGURATION.md](CONFIGURATION.md)**. |
 | **No new work items** | **`create_new_work_items`**, filters, **`create_only_when_fix_available`**, Snyk data in scope. |
 | **Cannot pull image** | **`ghcr.io`** auth and tag/digest; confirm image name on the [**GitHub container package**](https://github.com/snyk-ps/snyk-azure-boards-integration/pkgs/container/snyk-azure-boards-integration). |
 

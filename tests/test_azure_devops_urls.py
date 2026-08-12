@@ -5,6 +5,7 @@ from integrations.azure_devops.urls import (
     work_item_comment_url,
     work_item_create_url,
     work_item_get_url,
+    work_item_type_fields_url,
     work_items_list_url,
     work_item_update_url,
 )
@@ -48,6 +49,18 @@ def test_work_items_list_url_query() -> None:
         api_version="7.1",
     )
     assert "ids=1%2C2%2C3" in url or "ids=1,2,3" in url
+    assert "api-version=7.1" in url
+
+
+def test_work_item_type_fields_url() -> None:
+    url = work_item_type_fields_url(
+        "https://dev.azure.com",
+        "org",
+        "proj",
+        "Bug",
+        api_version="7.1",
+    )
+    assert "/_apis/wit/workitemtypes/Bug/fields" in url
     assert "api-version=7.1" in url
 
 

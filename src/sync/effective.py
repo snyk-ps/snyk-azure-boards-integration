@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from config.field_refs import normalize_work_item_description_field
 from config.policy_parse import (
     coerce_bool,
     normalize_reopen_policy,
@@ -136,6 +137,13 @@ def _merged_defaults_with_overrides(
             )
         appendix = str(raw_ap or "")
 
+    desc_field = base.work_item_description_field
+    if "work_item_description_field" in o:
+        desc_field = normalize_work_item_description_field(
+            o["work_item_description_field"],
+            field_prefix="org_mappings[].overrides.work_item_description_field",
+        )
+
     if "sync_included_snyk_origins" in o:
         allowlist = parse_sync_included_snyk_origins(
             o["sync_included_snyk_origins"],
@@ -157,6 +165,7 @@ def _merged_defaults_with_overrides(
         work_item_type=str(wit_type).strip() or base.work_item_type,
         work_item_state_active=str(wit_active).strip() or base.work_item_state_active,
         work_item_state_closed=str(wit_closed).strip() or base.work_item_state_closed,
+        work_item_description_field=desc_field,
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,

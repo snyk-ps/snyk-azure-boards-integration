@@ -41,6 +41,30 @@ def test_boards_for_org_mapping_applies_overrides() -> None:
     assert b.organization == "o"
 
 
+def test_boards_for_org_mapping_description_field_override() -> None:
+    app = AppConfig(
+        azure_boards=AzureBoardsConfig(
+            defaults=AzureBoardsDefaults(
+                work_item_type="Task",
+                work_item_description_field=None,
+            ),
+        ),
+        work_item_template={},
+        snyk=SnykConfig(),
+    )
+    m = OrgMapping(
+        organization="o",
+        project="p",
+        snyk_org_id="s",
+        snyk_org_slug="slug",
+        overrides={"work_item_description_field": "Microsoft.VSTS.TCM.ReproSteps"},
+    )
+    b = boards_for_org_mapping(app, m)
+    assert (
+        b.defaults.work_item_description_field == "Microsoft.VSTS.TCM.ReproSteps"
+    )
+
+
 def test_effective_snyk_org_slug_from_mapping_row() -> None:
     app = AppConfig(
         azure_boards=AzureBoardsConfig(),

@@ -49,6 +49,7 @@ def test_work_items_list_url_query() -> None:
         api_version="7.1",
     )
     assert "ids=1%2C2%2C3" in url or "ids=1,2,3" in url
+    assert "errorPolicy=Omit" in url
     assert "api-version=7.1" in url
 
 

@@ -12,8 +12,8 @@ from config.models import REOPEN_POLICY_REOPEN_EXISTING, AppConfig, AzureBoardsC
 from integrations.azure_devops.client import WorkItemsClient
 from integrations.azure_devops.errors import AzureDevOpsClientError
 from mapping_store.protocol import MappingRow, MappingStore
-from observability.integration_audit import log_sync_summary
-from observability.sync_context import reset_sync_run_id, set_sync_run_id
+from observability.integration_audit import log_missing_mapped_work_item, log_sync_summary
+from observability.sync_context import get_sync_run_id, reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 
 from sync.azure_batch import batch_get_work_items
@@ -100,6 +100,88 @@ def _format_audit_comment(
     if len(text) <= _MAX_COMMENT:
         return text
     return text[: _MAX_COMMENT - len(_TRUNC)] + _TRUNC
+
+
+def _create_replacement_work_item(
+    *,
+    gid: str,
+    oid: str,
+    pid: str,
+    iid: str,
+    ado_org: str,
+    ado_proj: str,
+    ab: AzureBoardsConfig,
+    template: dict[str, Any],
+    description_field: str,
+    wit_client: WorkItemsClient,
+    store: MappingStore,
+    title: str,
+    description: str,
+    severity_level_for_tags: str | None,
+    issue_snyk_type: str | None,
+    app_base_url: str,
+    new_status: str,
+    issue_key: str,
+    prior_work_item_id: str,
+    snyk_pn: str,
+    snyk_po: str,
+    prev_snyk: str | None,
+    audit_prior_work_item: bool,
+) -> str:
+    """
+    Create a new Azure Boards work item, upsert mapping, optional audit on prior id.
+
+    Returns the new work item id string.
+    """
+    patches = build_create_patch(
+        title=title,
+        description=description,
+        active_state=ab.work_item_state_active,
+        template=template,
+        issue_effective_severity_level=severity_level_for_tags,
+        issue_snyk_type=issue_snyk_type,
+        app_base_url=app_base_url,
+        description_field=description_field,
+    )
+    created = wit_client.create_work_item(
+        ado_org,
+        ado_proj,
+        ab.work_item_type,
+        patches,
+    )
+    new_wid = str(created.get("work_item_id", ""))
+    wst = str(created.get("work_item_status") or "")
+    store.upsert(
+        group_id=gid,
+        org_id=oid,
+        project_id=pid,
+        issue_id=iid,
+        snyk_status=new_status,
+        organization=ado_org,
+        project=ado_proj,
+        work_item_id=new_wid,
+        work_item_status=wst,
+        snyk_project_name=snyk_pn,
+        snyk_project_origin=snyk_po,
+        excluded=False,
+        exclusion_reason="",
+    )
+    if audit_prior_work_item and prior_work_item_id.strip():
+        prior_url = _ado_work_item_edit_url(
+            organization=ado_org,
+            project=ado_proj,
+            work_item_id=prior_work_item_id,
+        )
+        old_status = prev_snyk if prev_snyk is not None else new_status
+        text = _format_audit_comment(
+            old_status=old_status,
+            new_status=new_status,
+            issue_key=issue_key,
+            prior_work_item_id=prior_work_item_id,
+            prior_work_item_url=prior_url,
+        )
+        wit_client.add_work_item_comment(ado_org, ado_proj, new_wid, text)
+    return new_wid
 
 
 def _fetch_project_metadata(
@@ -608,57 +690,31 @@ def _sync_one_issue(
             log.debug("sync skip reopen create (no fix available) issue=%s", issue_key)
             return
 
-        patches = build_create_patch(
+        _create_replacement_work_item(
+            gid=gid,
+            oid=oid,
+            pid=pid,
+            iid=iid,
+            ado_org=ado_org,
+            ado_proj=ado_proj,
+            ab=ab,
+            template=template,
+            description_field=description_field,
+            wit_client=wit_client,
+            store=store,
             title=title,
             description=description,
-            active_state=ab.work_item_state_active,
-            template=template,
-            issue_effective_severity_level=severity_level_for_tags,
+            severity_level_for_tags=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
             app_base_url=app_base_url,
-            description_field=description_field,
+            new_status=new_status,
+            issue_key=issue_key,
+            prior_work_item_id=prev_wid,
+            snyk_pn=snyk_pn,
+            snyk_po=snyk_po,
+            prev_snyk=prev_snyk,
+            audit_prior_work_item=prev_snyk is not None and prev_snyk != new_status,
         )
-        created = wit_client.create_work_item(
-            ado_org,
-            ado_proj,
-            ab.work_item_type,
-            patches,
-        )
-        new_wid = str(created.get("work_item_id", ""))
-        wst = str(created.get("work_item_status") or "")
-        prior_url = (
-            _ado_work_item_edit_url(
-                organization=ado_org,
-                project=ado_proj,
-                work_item_id=prev_wid,
-            )
-            if prev_wid.strip()
-            else None
-        )
-        store.upsert(
-            group_id=gid,
-            org_id=oid,
-            project_id=pid,
-            issue_id=iid,
-            snyk_status=new_status,
-            organization=ado_org,
-            project=ado_proj,
-            work_item_id=new_wid,
-            work_item_status=wst,
-            snyk_project_name=snyk_pn,
-            snyk_project_origin=snyk_po,
-            excluded=False,
-            exclusion_reason="",
-        )
-        if prev_snyk is not None and prev_snyk != new_status:
-            text = _format_audit_comment(
-                old_status=prev_snyk,
-                new_status=new_status,
-                issue_key=issue_key,
-                prior_work_item_id=prev_wid or None,
-                prior_work_item_url=prior_url,
-            )
-            wit_client.add_work_item_comment(ado_org, ado_proj, new_wid, text)
         return
 
     wid = str(row.work_item_id).strip()
@@ -668,10 +724,76 @@ def _sync_one_issue(
 
     wi = cache.get(wid)
     if wi is None:
-        log.error(
-            "sync skip Azure work item %s not found for issue=%s",
+        log.info(
+            "mapped work item %s missing from Azure DevOps for issue=%s",
             wid,
             issue_key,
+        )
+        sync_rid = get_sync_run_id()
+        if new_status in (DERIVED_RESOLVED, DERIVED_IGNORED):
+            log_missing_mapped_work_item(
+                prior_work_item_id=wid,
+                issue_key=issue_key,
+                action="skip",
+                sync_run_id=sync_rid,
+            )
+            return
+        if new_status != DERIVED_OPEN:
+            log_missing_mapped_work_item(
+                prior_work_item_id=wid,
+                issue_key=issue_key,
+                action="skip",
+                sync_run_id=sync_rid,
+            )
+            return
+        if not ab.create_new_work_items:
+            log_missing_mapped_work_item(
+                prior_work_item_id=wid,
+                issue_key=issue_key,
+                action="skip",
+                sync_run_id=sync_rid,
+            )
+            log.warning(
+                "sync skip recreate (create_new_work_items is false) issue=%s",
+                issue_key,
+            )
+            return
+        if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
+            log.debug(
+                "sync skip recreate (no fix available) issue=%s",
+                issue_key,
+            )
+            return
+        log_missing_mapped_work_item(
+            prior_work_item_id=wid,
+            issue_key=issue_key,
+            action="recreate",
+            sync_run_id=sync_rid,
+        )
+        _create_replacement_work_item(
+            gid=gid,
+            oid=oid,
+            pid=pid,
+            iid=iid,
+            ado_org=ado_org,
+            ado_proj=ado_proj,
+            ab=ab,
+            template=template,
+            description_field=description_field,
+            wit_client=wit_client,
+            store=store,
+            title=title,
+            description=description,
+            severity_level_for_tags=severity_level_for_tags,
+            issue_snyk_type=issue_snyk_type,
+            app_base_url=app_base_url,
+            new_status=new_status,
+            issue_key=issue_key,
+            prior_work_item_id=wid,
+            snyk_pn=snyk_pn,
+            snyk_po=snyk_po,
+            prev_snyk=prev_snyk,
+            audit_prior_work_item=True,
         )
         return
 

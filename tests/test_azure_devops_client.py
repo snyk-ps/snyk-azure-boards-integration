@@ -182,12 +182,26 @@ def test_list_parses_value_array() -> None:
 
     def opener(req: Request, timeout: float = 0) -> _FakeResp:
         assert "ids=" in req.full_url
+        assert "errorPolicy=Omit" in req.full_url
         assert f"api-version={AZURE_DEVOPS_WIT_API_VERSION}" in req.full_url
         return _FakeResp(raw)
 
     client = WorkItemsClient(pat="t", opener=opener)
     rows = client.list_work_items_by_ids("o", "p", [1, 2])
     assert [r["work_item_id"] for r in rows] == [1, 2]
+
+
+def test_list_omits_missing_ids_from_partial_value() -> None:
+    doc = {"value": [json.loads(_work_item_json(1))]}
+    raw = json.dumps(doc).encode("utf-8")
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        assert "errorPolicy=Omit" in req.full_url
+        return _FakeResp(raw)
+
+    client = WorkItemsClient(pat="t", opener=opener)
+    rows = client.list_work_items_by_ids("o", "p", [1, 999])
+    assert [r["work_item_id"] for r in rows] == [1]
 
 
 def test_create_sends_json_patch_content_type() -> None:

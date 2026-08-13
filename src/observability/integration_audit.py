@@ -58,6 +58,29 @@ def log_integration_http(
         _AUDIT.log(logging.INFO, _PLACEHOLDER, extra={"record": payload})
 
 
+def log_missing_mapped_work_item(
+    *,
+    prior_work_item_id: str,
+    issue_key: str,
+    action: str,
+    sync_run_id: str | None = None,
+) -> None:
+    """
+    Emit one audit line when a stored mapped work item id is absent from ADO batch prefetch.
+
+    ``action`` is ``recreate`` or ``skip`` (non-secret operator diagnostics only).
+    """
+    payload: dict[str, object] = {
+        "action": action,
+        "event": "missing_mapped_work_item",
+        "issue_key": issue_key[:500],
+        "prior_work_item_id": prior_work_item_id.strip(),
+    }
+    if sync_run_id:
+        payload["sync_run_id"] = sync_run_id
+    _AUDIT.info(_PLACEHOLDER, extra={"record": payload})
+
+
 def log_sync_summary(
     *,
     sync_run_id: str,

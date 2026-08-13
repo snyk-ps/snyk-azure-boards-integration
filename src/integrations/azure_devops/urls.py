@@ -63,7 +63,9 @@ def work_items_list_url(
     org = _segment(organization)
     proj = _segment(project)
     id_list = ",".join(str(i).strip() for i in ids)
-    q = urlencode({"ids": id_list, "api-version": api_version})
+    q = urlencode(
+        {"ids": id_list, "errorPolicy": "Omit", "api-version": api_version},
+    )
     return f"{root}/{org}/{proj}/_apis/wit/workitems?{q}"
 
 

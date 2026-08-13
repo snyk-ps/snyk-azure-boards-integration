@@ -95,8 +95,8 @@ Unless noted, use **`api-version=7.1`** for Work Item Tracking. The integration 
 
 | | |
 |---|---|
-| **HTTP** | `GET https://dev.azure.com/{organization}/{project}/_apis/wit/workitems?ids={ids}&api-version=7.1` |
-| **Purpose** | Fetch up to **200** work items in one GET; use when batch POST is not used. |
+| **HTTP** | `GET https://dev.azure.com/{organization}/{project}/_apis/wit/workitems?ids={ids}&errorPolicy=Omit&api-version=7.1` |
+| **Purpose** | Fetch up to **200** work items in one GET; use when batch POST is not used. **`errorPolicy=Omit`** ensures missing or unreadable ids are omitted from the response instead of failing the entire request — required for **`sync`** batch prefetch when mapping rows reference deleted work items. |
 
 **Documentation:** [Work Items - List](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/list?view=azure-devops-rest-7.1&tabs=HTTP).
 

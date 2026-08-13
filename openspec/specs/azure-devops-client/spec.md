@@ -73,7 +73,7 @@ The client SHALL support the following operations aligned with `openspec/specs/i
 
 - **Create work item:** `POST …/wit/workitems/${type}` with **`application/json-patch+json`** body (JSON Patch operations).
 - **Get work item:** `GET …/wit/workitems/{id}`.
-- **List work items by ids:** `GET …/wit/workitems?ids=…` with **at most 200** ids per request; if the caller supplies more than 200 ids in a single list call, the client SHALL fail before HTTP with a clear error.
+- **List work items by ids:** `GET …/wit/workitems?ids=…&errorPolicy=Omit` with **at most 200** ids per request; if the caller supplies more than 200 ids in a single list call, the client SHALL fail before HTTP with a clear error.
 - **Update work item:** `PATCH …/wit/workitems/{id}` with **`application/json-patch+json`** body.
 - **Add work item comment:** `POST …/wit/workItems/{workItemId}/comments` using the preview `api-version` from `integration-apis`, with a request body including comment text as required by that API.
 - **List work item type fields:** `GET …/wit/workitemtypes/{type}/fields` with **`api-version=7.1`**, returning field reference names for the requested work item type in the given project.
@@ -89,6 +89,11 @@ The client SHALL NOT implement **`workitemsbatch`**, **WIQL query**, or **Core g
 
 - **WHEN** the caller requests list-by-ids with more than 200 ids in one invocation
 - **THEN** the client SHALL reject the call before sending HTTP
+
+#### Scenario: List by ids uses errorPolicy Omit
+
+- **WHEN** the caller requests list-by-ids with one or more ids
+- **THEN** the client SHALL include **`errorPolicy=Omit`** in the query string per `integration-apis`
 
 #### Scenario: Work item type fields list uses WIT api version
 

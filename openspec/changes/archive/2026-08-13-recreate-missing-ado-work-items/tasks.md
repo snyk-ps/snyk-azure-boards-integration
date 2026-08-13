@@ -33,4 +33,4 @@
 
 ## 7. Archive (human only)
 
-- [ ] **[ ]** Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/recreate-missing-ado-work-items/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive recreate-missing-ado-work-items`** (or project equivalent) to fold deltas into canonical specs.
+- [x] **[x]** Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/recreate-missing-ado-work-items/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive recreate-missing-ado-work-items`** (or project equivalent) to fold deltas into canonical specs.

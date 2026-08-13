@@ -1,8 +1,8 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: List work items by ids uses errorPolicy Omit for sync batch prefetch
+### Requirement: List work items (by ids) — errorPolicy Omit
 
-For **List work items (by ids)**, the integration SHALL use:
+The **List work items (by ids)** operation documented under **Azure DevOps REST API reference** SHALL use:
 
 `GET https://dev.azure.com/{organization}/{project}/_apis/wit/workitems?ids={ids}&errorPolicy=Omit&api-version=7.1`
 

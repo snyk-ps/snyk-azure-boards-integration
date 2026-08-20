@@ -25,6 +25,7 @@ def env_pat(monkeypatch: pytest.MonkeyPatch) -> None:
 def _base_cfg_yaml() -> str:
     return (
         "azure_boards:\n"
+        "  repo_mapping_csv: \"\"\n"
         "  defaults:\n"
         "    organization: ado-o\n"
         "    project: ado-p\n"

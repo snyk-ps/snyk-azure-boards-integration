@@ -153,6 +153,8 @@ def build_create_patch(
     issue_snyk_type: str | None = None,
     app_base_url: str = DEFAULT_APP_ORIGIN,
     description_field: str = DESCRIPTION_FIELD_SYSTEM,
+    area_path: str | None = None,
+    assigned_to: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     JSON Patch for ``POST`` work item create.
@@ -171,6 +173,9 @@ def build_create_patch(
         },
         {"op": "add", "path": "/fields/System.State", "value": active_state},
     ]
+    area = str(area_path or "").strip()
+    if area:
+        ops.append({"op": "add", "path": "/fields/System.AreaPath", "value": area})
     field_tags = _field_tags_from_template_and_issue(
         template,
         issue_effective_severity_level=issue_effective_severity_level,
@@ -185,10 +190,26 @@ def build_create_patch(
             },
         )
     ops.extend(_normalize_json_patch(template))
-    return filter_assignee_from_create_patch(
+    csv_assignee = str(assigned_to or "").strip()
+    keep_assignee = template_supplies_assigned_to(template) or bool(csv_assignee)
+    ops = filter_assignee_from_create_patch(
         ops,
-        template_supplies_assignee=template_supplies_assigned_to(template),
+        template_supplies_assignee=keep_assignee,
     )
+    if csv_assignee:
+        ops = [
+            op
+            for op in ops
+            if "System.AssignedTo" not in str(op.get("path", ""))
+        ]
+        ops.append(
+            {
+                "op": "add",
+                "path": "/fields/System.AssignedTo",
+                "value": csv_assignee,
+            },
+        )
+    return ops
 
 
 def build_update_patch(
@@ -201,6 +222,9 @@ def build_update_patch(
     issue_snyk_type: str | None = None,
     app_base_url: str = DEFAULT_APP_ORIGIN,
     description_field: str = DESCRIPTION_FIELD_SYSTEM,
+    area_path: str | None = None,
+    patch_area_path: bool = False,
+    assigned_to: str | None = None,
 ) -> list[dict[str, Any]]:
     """JSON Patch for ``PATCH`` update (replace built-ins, tags, then template ops)."""
     ops: list[dict[str, Any]] = [
@@ -215,6 +239,9 @@ def build_update_patch(
         },
         {"op": "replace", "path": "/fields/System.State", "value": state},
     ]
+    area = str(area_path or "").strip()
+    if patch_area_path and area:
+        ops.append({"op": "replace", "path": "/fields/System.AreaPath", "value": area})
     field_tags = _field_tags_from_template_and_issue(
         template,
         issue_effective_severity_level=issue_effective_severity_level,
@@ -229,6 +256,20 @@ def build_update_patch(
             },
         )
     ops.extend(_normalize_json_patch(template))
+    csv_assignee = str(assigned_to or "").strip()
+    if csv_assignee:
+        ops = [
+            op
+            for op in ops
+            if "System.AssignedTo" not in str(op.get("path", ""))
+        ]
+        ops.append(
+            {
+                "op": "replace",
+                "path": "/fields/System.AssignedTo",
+                "value": csv_assignee,
+            },
+        )
     return ops
 
 

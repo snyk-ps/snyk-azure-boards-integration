@@ -42,6 +42,7 @@ from sync.lifecycle import (
 )
 from sync.origin_filter import classify_origin_for_allowlist
 from sync.patch_build import build_create_patch, build_update_patch
+from sync.repo_mapping import RepoMappingIndex, ResolvedRouting, load_repo_mapping_index, resolve_routing
 from sync.validate import validate_sync_config, validate_sync_environment
 
 LOGGER = logging.getLogger(__name__)
@@ -102,6 +103,34 @@ def _format_audit_comment(
     return text[: _MAX_COMMENT - len(_TRUNC)] + _TRUNC
 
 
+def _format_area_path_move_comment(*, previous: str, new: str) -> str:
+    prev_display = previous if previous else "(unset)"
+    return f"Snyk sync moved work item area path from '{prev_display}' to '{new}'."
+
+
+def _work_item_area_path(wi: Mapping[str, Any] | None) -> str:
+    if wi is None:
+        return ""
+    fields = wi.get("fields")
+    if not isinstance(fields, dict):
+        return ""
+    return str(fields.get("System.AreaPath") or "").strip()
+
+
+def _log_issue_routing(
+    log: logging.Logger,
+    *,
+    issue_key: str,
+    routing: ResolvedRouting,
+) -> None:
+    log.info(
+        "sync routing issue=%s area_path_source=%s assignee_from_csv=%s",
+        issue_key,
+        routing.area_path_source,
+        routing.assignee_from_csv,
+    )
+
+
 def _create_replacement_work_item(
     *,
     gid: str,
@@ -127,12 +156,15 @@ def _create_replacement_work_item(
     snyk_po: str,
     prev_snyk: str | None,
     audit_prior_work_item: bool,
+    routing: ResolvedRouting,
+    log: logging.Logger,
 ) -> str:
     """
     Create a new Azure Boards work item, upsert mapping, optional audit on prior id.
 
     Returns the new work item id string.
     """
+    _log_issue_routing(log, issue_key=issue_key, routing=routing)
     patches = build_create_patch(
         title=title,
         description=description,
@@ -142,6 +174,8 @@ def _create_replacement_work_item(
         issue_snyk_type=issue_snyk_type,
         app_base_url=app_base_url,
         description_field=description_field,
+        area_path=routing.area_path,
+        assigned_to=routing.assignee,
     )
     created = wit_client.create_work_item(
         ado_org,
@@ -259,6 +293,8 @@ def _run_sync_body(
 ) -> int:
     """Core sync loop after environment validation (no sync_run_id wrapper)."""
     ab = config.azure_boards
+    repo_index = load_repo_mapping_index(config)
+    global_area_path = ab.defaults.area_path
     description_fields = DescriptionFieldResolver(wit_client)
     warm_description_fields_for_sync(config, description_fields)
 
@@ -309,6 +345,8 @@ def _run_sync_body(
                 snyk_org_id_for_detail=m.snyk_org_id.strip(),
                 snyk_group_id_for_detail=config.snyk.group_id.strip()
                 or m.snyk_org_id.strip(),
+                repo_index=repo_index,
+                global_defaults_area_path=global_area_path,
             )
         log.info("sync run finished (org_mappings mode)")
         return 0
@@ -352,6 +390,8 @@ def _run_sync_body(
         use_org_scope_for_detail=False,
         snyk_org_id_for_detail=None,
         snyk_group_id_for_detail=group_id,
+        repo_index=repo_index,
+        global_defaults_area_path=global_area_path,
     )
     log.info("sync run finished for group_id=%s", group_id)
     return 0
@@ -375,6 +415,8 @@ def _run_sync_batch(
     use_org_scope_for_detail: bool,
     snyk_org_id_for_detail: str | None,
     snyk_group_id_for_detail: str,
+    repo_index: RepoMappingIndex,
+    global_defaults_area_path: str | None,
 ) -> None:
     wids: list[str] = []
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
@@ -420,6 +462,8 @@ def _run_sync_batch(
                 use_org_scope_for_detail=use_org_scope_for_detail,
                 snyk_org_id_for_detail=snyk_org_id_for_detail,
                 snyk_group_id_for_detail=snyk_group_id_for_detail,
+                repo_index=repo_index,
+                global_defaults_area_path=global_defaults_area_path,
             )
         except Exception as exc:  # noqa: BLE001 — per-issue isolation
             log.error("sync skip issue_id=%s: %s", iid, exc)
@@ -446,6 +490,8 @@ def _sync_one_issue(
     use_org_scope_for_detail: bool,
     snyk_org_id_for_detail: str | None,
     snyk_group_id_for_detail: str,
+    repo_index: RepoMappingIndex,
+    global_defaults_area_path: str | None,
 ) -> None:
     gid, oid, pid, iid = natural_key
     rec = enrich_issue_record(
@@ -547,6 +593,14 @@ def _sync_one_issue(
         app_base_url=app_base_url,
     )
 
+    routing = resolve_routing(
+        index=repo_index,
+        snyk_project_origin=snyk_po,
+        snyk_project_name=snyk_pn,
+        boards=boards,
+        global_defaults_area_path=global_defaults_area_path,
+    )
+
     prev_snyk = row.snyk_status if row is not None else None
     prev_wid = str(row.work_item_id) if row is not None else ""
     # Rows persisted while origin-excluded often have no work_item_id; if the issue
@@ -571,6 +625,7 @@ def _sync_one_issue(
         if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
             log.debug("sync skip create (no fix available) issue=%s", issue_key)
             return
+        _log_issue_routing(log, issue_key=issue_key, routing=routing)
         patches = build_create_patch(
             title=title,
             description=description,
@@ -580,6 +635,8 @@ def _sync_one_issue(
             issue_snyk_type=issue_snyk_type,
             app_base_url=app_base_url,
             description_field=description_field,
+            area_path=routing.area_path,
+            assigned_to=routing.assignee,
         )
         created = wit_client.create_work_item(
             ado_org,
@@ -620,7 +677,7 @@ def _sync_one_issue(
             and prev_wid.strip()
         ):
             try:
-                wit_client.get_work_item(ado_org, ado_proj, prev_wid.strip())
+                existing = wit_client.get_work_item(ado_org, ado_proj, prev_wid.strip())
             except AzureDevOpsClientError as exc:
                 if getattr(exc, "status_code", None) != 404:
                     raise
@@ -639,6 +696,10 @@ def _sync_one_issue(
                     )
                     return
                 target_state = ab.work_item_state_active
+                current_area = _work_item_area_path(existing)
+                effective_area = str(routing.area_path or "").strip()
+                patch_area = bool(effective_area and effective_area != current_area)
+                _log_issue_routing(log, issue_key=issue_key, routing=routing)
                 patches = build_update_patch(
                     title=title,
                     description=description,
@@ -648,6 +709,9 @@ def _sync_one_issue(
                     issue_snyk_type=issue_snyk_type,
                     app_base_url=app_base_url,
                     description_field=description_field,
+                    area_path=effective_area or None,
+                    patch_area_path=patch_area,
+                    assigned_to=routing.assignee,
                 )
                 updated = wit_client.update_work_item(
                     ado_org,
@@ -671,6 +735,16 @@ def _sync_one_issue(
                     excluded=False,
                     exclusion_reason="",
                 )
+                if patch_area and effective_area:
+                    wit_client.add_work_item_comment(
+                        ado_org,
+                        ado_proj,
+                        prev_wid.strip(),
+                        _format_area_path_move_comment(
+                            previous=current_area,
+                            new=effective_area,
+                        ),
+                    )
                 if prev_snyk is not None and prev_snyk != new_status:
                     text = _format_audit_comment(
                         old_status=prev_snyk,
@@ -714,6 +788,8 @@ def _sync_one_issue(
             snyk_po=snyk_po,
             prev_snyk=prev_snyk,
             audit_prior_work_item=prev_snyk is not None and prev_snyk != new_status,
+            routing=routing,
+            log=log,
         )
         return
 
@@ -794,6 +870,8 @@ def _sync_one_issue(
             snyk_po=snyk_po,
             prev_snyk=prev_snyk,
             audit_prior_work_item=True,
+            routing=routing,
+            log=log,
         )
         return
 
@@ -802,6 +880,10 @@ def _sync_one_issue(
         if new_status in (DERIVED_RESOLVED, DERIVED_IGNORED)
         else ab.work_item_state_active
     )
+    current_area = _work_item_area_path(wi)
+    effective_area = str(routing.area_path or "").strip()
+    patch_area = bool(effective_area and effective_area != current_area)
+    _log_issue_routing(log, issue_key=issue_key, routing=routing)
     patches = build_update_patch(
         title=title,
         description=description,
@@ -811,6 +893,9 @@ def _sync_one_issue(
         issue_snyk_type=issue_snyk_type,
         app_base_url=app_base_url,
         description_field=description_field,
+        area_path=effective_area or None,
+        patch_area_path=patch_area,
+        assigned_to=routing.assignee,
     )
     updated = wit_client.update_work_item(ado_org, ado_proj, wid, patches)
     wst = str(updated.get("work_item_status") or "")
@@ -830,6 +915,14 @@ def _sync_one_issue(
         excluded=False,
         exclusion_reason="",
     )
+
+    if patch_area and effective_area:
+        wit_client.add_work_item_comment(
+            ado_org,
+            ado_proj,
+            wid,
+            _format_area_path_move_comment(previous=current_area, new=effective_area),
+        )
 
     if prev_snyk is not None and prev_snyk != new_status:
         text = _format_audit_comment(

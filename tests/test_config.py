@@ -709,3 +709,42 @@ def test_mapping_store_azure_table_env_override_yaml_endpoint(
     )
     c = load_app_config(config_path=str(p), cli_group_id=None)
     assert c.mapping_store_azure_table_endpoint == "https://from-env.table.core.windows.net"
+
+
+def test_load_app_config_area_path_under_defaults(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        '  repo_mapping_csv: ""\n'
+        "  defaults:\n"
+        '    area_path: \'MyProject\\TeamA\'\n',
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.area_path == "MyProject\\TeamA"
+
+
+def test_load_app_config_rejects_flat_area_path(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("azure_boards:\n  area_path: x\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="azure_boards.defaults.area_path"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_load_app_config_repo_mapping_csv_and_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  repo_mapping_csv: custom.csv\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPO_MAPPING_CSV_PATH", "/env/repo-mapping.csv")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.repo_mapping_csv == "/env/repo-mapping.csv"
+
+
+def test_load_app_config_sets_config_file_dir(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("snyk:\n  group_id: g\n", encoding="utf-8")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.config_file_dir == str(p.parent.resolve())
+

@@ -183,6 +183,7 @@ data/*.sqlite
 # Local configuration files
 data/*.local*
 data/*.csv
+!data/sample-repo-mapping.csv
 !data/sample-orgs.csv
 data/*debug*
 

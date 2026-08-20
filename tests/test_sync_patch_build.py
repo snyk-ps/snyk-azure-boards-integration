@@ -67,6 +67,47 @@ def test_build_create_patch_includes_tags_and_template_ops() -> None:
     assert desc_op["value"] == "<p>D</p>"
 
 
+def test_build_create_patch_includes_area_path_and_csv_assignee() -> None:
+    tpl = {
+        "json_patch": [
+            {"op": "add", "path": "/fields/System.AssignedTo", "value": "template@example.com"},
+        ],
+    }
+    ops = build_create_patch(
+        title="T",
+        description="D",
+        active_state="New",
+        template=tpl,
+        area_path="MyProject\\TeamA",
+        assigned_to="csv@example.com",
+    )
+    paths = [o["path"] for o in ops]
+    assert "/fields/System.AreaPath" in paths
+    assignee_ops = [o for o in ops if o.get("path") == "/fields/System.AssignedTo"]
+    assert len(assignee_ops) == 1
+    assert assignee_ops[0]["value"] == "csv@example.com"
+
+
+def test_build_update_patch_area_path_and_csv_assignee() -> None:
+    from sync.patch_build import build_update_patch
+
+    ops = build_update_patch(
+        title="T",
+        description="D",
+        state="Active",
+        template={},
+        area_path="New\\Path",
+        patch_area_path=True,
+        assigned_to="csv@example.com",
+    )
+    paths = [o["path"] for o in ops]
+    assert "/fields/System.AreaPath" in paths
+    assert any(
+        o.get("path") == "/fields/System.AssignedTo" and o.get("value") == "csv@example.com"
+        for o in ops
+    )
+
+
 def test_build_create_patch_description_html_paragraph_breaks() -> None:
     ops = build_create_patch(
         title="T",

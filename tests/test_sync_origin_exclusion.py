@@ -28,6 +28,7 @@ def test_run_sync_does_not_call_ado_when_origin_excluded(
     cfg_path = tmp_path / "c.yaml"
     cfg_path.write_text(
         "azure_boards:\n"
+        "  repo_mapping_csv: \"\"\n"
         "  defaults:\n"
         "    organization: ado-o\n"
         "    project: ado-p\n"
@@ -109,6 +110,7 @@ def test_run_sync_creates_when_reincluded_row_has_empty_work_item_id(
     cfg_path = tmp_path / "c.yaml"
     cfg_path.write_text(
         "azure_boards:\n"
+        "  repo_mapping_csv: \"\"\n"
         "  defaults:\n"
         "    organization: ado-o\n"
         "    project: ado-p\n"

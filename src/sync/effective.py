@@ -152,6 +152,14 @@ def _merged_defaults_with_overrides(
     else:
         allowlist = base.sync_included_snyk_origins
 
+    area_path = base.area_path
+    if "area_path" in o:
+        raw_ap = o["area_path"]
+        if raw_ap is not None and not isinstance(raw_ap, str):
+            raise ConfigError("org_mappings[].overrides.area_path must be a string")
+        stripped = str(raw_ap or "").strip()
+        area_path = stripped if stripped else None
+
     wit_tmpl = dict(base.work_item_template)
 
     return AzureBoardsDefaults(
@@ -169,6 +177,7 @@ def _merged_defaults_with_overrides(
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,
+        area_path=area_path,
     )
 
 

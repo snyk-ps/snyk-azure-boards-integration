@@ -48,6 +48,29 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `work_item_description_field` | string | (omit = auto) | Azure DevOps field **reference name** for Snyk narrative body content (for example `System.Description` or `Microsoft.VSTS.TCM.ReproSteps`). When **omitted** or whitespace-only, **`sync`** **auto-resolves** at startup: prefers **`System.Description`**, then **`Microsoft.VSTS.TCM.ReproSteps`** if Description is not on the effective work item type. Set explicitly when your process uses a different field or when you need Repro Steps even though Description also exists (common for **Bug**). Overridable per **`org_mappings`** row. |
 | `work_item_description_appendix` | string | `""` | Optional **appendix**: your own plain text, added **at the end** of the work item description **after** the auto-generated Snyk content (finding info and links). **`sync`** turns the full description into HTML for Azure DevOps; this text is **escaped** as plain text, not treated as HTML. If you omit the key or the value is only whitespace after trim, nothing extra is added. You can set a different appendix per **`org_mappings`** row via **`overrides`**. Use for runbooks or notes, **not** secrets. |
 | `work_item_template` | object | (see below) | **`tags`**, optional **`json_patch`**; see **`work_item_template`**. |
+| `area_path` | string | (omit) | Fallback **`System.AreaPath`** when no **`repo-mapping.csv`** row matches. Overridable per **`org_mappings`** row via **`overrides.area_path`**. |
+
+## `azure_boards.repo_mapping_csv`
+
+| Subkey | Type | Default | Notes |
+| ------ | ---- | ------- | ----- |
+| `repo_mapping_csv` | string | `repo-mapping.csv` | Path to the repo-level routing CSV, resolved relative to the **directory of the loaded YAML** unless absolute. Override via environment **`REPO_MAPPING_CSV_PATH`**. Set to **`""`** to disable CSV routing (YAML fallbacks only). When enabled and the file is missing, **`sync`** fails at startup. Co-locate **`repo-mapping.csv`** with **`config.yaml`** on Azure Files. Sample: **`data/sample-repo-mapping.csv`**. |
+
+### `repo-mapping.csv` columns
+
+| Column | Required | Notes |
+| ------ | -------- | ----- |
+| **Source** | yes | **`github`** or **`azure-repos`** only. **`github`** matches all GitHub-family Snyk origins (`github`, `github-cloud-app`, `github-enterprise`, `github-server-app`). |
+| **GitHub Org/ADO Project** | yes* | Matches the **owner** segment of Snyk project name **`Owner/Repo`** (GitHub org or ADO project). May be empty only for repo-only keys (unusual). |
+| **Repo Name** | yes | Matches the **repo** segment of **`Owner/Repo`**. |
+| **Area Path** | yes | Full Azure DevOps area path (for example `MyProject\\Payments`). |
+| **Assignee** | no | When present on a matching row, **always overrides** YAML/template assignee on create **and** update. |
+
+**Matching:** Snyk project names are typically **`Owner/Repo`**, but issue payloads may append a branch and manifest suffix (for example **`Owner/Repo(main):package.json`**). **`sync`** splits on the first **`/`**, strips any **`(branch):manifest`** suffix from the repo segment, and matches together with grouped origin → **Source**.
+
+**Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → omit (ADO project default).
+
+**Updates:** When the resolved area path differs from the work item’s current **`System.AreaPath`**, **`sync`** patches the new path and adds an audit comment noting the previous and new location.
 
 ## `azure_boards.org_mappings` (each entry)
 
@@ -57,7 +80,7 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `project` | yes | Azure DevOps project for this row. |
 | `snyk_org_id` | yes (for org-scoped listing) | Snyk organization UUID for this target. |
 | `snyk_org_slug` | yes | Non-empty slug for **`app.snyk.io`** links in work items. |
-| `overrides` | no | Partial **`defaults`** override (severity, origins, **`work_item_*`**, **`work_item_template`**, etc.). |
+| `overrides` | no | Partial **`defaults`** override (severity, origins, **`work_item_*`**, **`area_path`**, **`work_item_template`**, etc.). |
 
 **Missing mapped work item in Azure DevOps:** If the mapping store holds a **`work_item_id`** that no longer exists in Azure DevOps (deleted manually or after a migration), **`sync`** logs **`missing_mapped_work_item`** with **`prior_work_item_id`** and **`action`**. For **open** Snyk findings it **recreates** a work item (when **`create_new_work_items`** is **true** and other create gates pass), updates the mapping, and adds an audit comment referencing the prior id. For **resolved** or **ignored** findings it **skips** Azure DevOps mutation (no recreate). This avoids a single stale id aborting the entire sync run.
 
@@ -185,6 +208,7 @@ Tokens must match exactly; the catalog aligns with [Snyk Origin](https://docs.sn
 | `AZURE_BOARDS_CREATE_NEW_WORK_ITEMS` | Overrides `azure_boards.defaults.create_new_work_items` (`true` / `false` / `1` / `0`). |
 | `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.defaults.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
 | `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.defaults.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
+| `REPO_MAPPING_CSV_PATH` | Overrides `azure_boards.repo_mapping_csv` (path to **`repo-mapping.csv`**; relative paths resolve beside the loaded YAML config directory). |
 | `AZURE_DEVOPS_PAT` | **Secret:** Azure DevOps personal access token (not read from YAML or CLI flags). |
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |

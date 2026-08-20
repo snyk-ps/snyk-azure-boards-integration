@@ -126,6 +126,7 @@ Other CLI subcommands override the default args, for example: **`docker run … 
 - Precedence: defaults, then YAML, then environment variables, then CLI (see **[CONFIGURATION.md § Precedence](CONFIGURATION.md#precedence)**).
 - **Rollout:** It is **recommended** to scope your first **`sync`** runs to **one test Snyk org** so you can confirm configuration end-to-end before adding **`org_mappings`** rows or widening to the full group.
 - Start from **`data/sample-config.yaml`**. Full key list, **`azure_boards.org_mappings`**, mapping store, **`fetch`** / **`sync`** details: **[CONFIGURATION.md](CONFIGURATION.md)**.
+- **Repo-level area path routing:** Co-locate **`repo-mapping.csv`** beside your YAML (default filename; override with **`azure_boards.repo_mapping_csv`** or **`REPO_MAPPING_CSV_PATH`**). Optional YAML fallback **`azure_boards.defaults.area_path`** and per-row **`org_mappings[].overrides.area_path`** apply when no CSV row matches. Sample CSV: **`data/sample-repo-mapping.csv`** — see **[CONFIGURATION.md § repo-mapping.csv](CONFIGURATION.md#azure_boardsrepo_mapping_csv)**.
 - **Bulk `org_mappings`:** To resolve **`snyk_org_id`** / **`snyk_org_slug`** from a CSV of ADO targets and Snyk org **names**, run **`scripts/generate_org_mapping_config.py`** locally (requires **`SNYK_TOKEN`**) or use the sample GitHub Actions workflow — see **[CONFIGURATION.md § Generating org_mappings from a CSV](CONFIGURATION.md#generating-org_mappings-from-a-csv)** (includes **GitHub Actions (sample)**).
 
 ## Usage
@@ -187,8 +188,8 @@ Use a **Container App Job** with a **Schedule** trigger (cron), not a regular HT
 3. **Advanced:** ensure **Allow storage account key access** stays **enabled** if you will use the **account key** for the ACA file share link (common for SMB).
 4. Create the account, then open it.
 5. Under **Data storage** → **File shares** → **+ File share:** create a share (e.g. `snyk-boards-config`).
-6. Open the share → **Upload** your **`config.yaml`** (non-secret policy only).  
-   The object in the share must end up as **`config.yaml`** at the **root** of the share so the mounted path **`/config/config.yaml`** is correct.
+6. Open the share → **Upload** your **`config.yaml`** (non-secret policy only) and **`repo-mapping.csv`** (repo-level area path routing; see **`data/sample-repo-mapping.csv`** and [CONFIGURATION.md](CONFIGURATION.md)).  
+   Both files should sit at the **root** of the share so mounted paths **`/config/config.yaml`** and **`/config/repo-mapping.csv`** match the defaults.
 7. Under **Security + networking** → **Access keys:** copy **key1** (or **key2**) — you’ll paste it when wiring the environment **Volume mount**.
 
 **Networking:** If the storage account uses a **restricted firewall** or **public network access** disabled, SMB mounts from Container Apps can fail (for example **`VolumeMountFailure`** / **`mount error(13): Permission denied`**). The account must be **reachable** from your Container Apps environment for that file share. See [Use storage mounts in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts).

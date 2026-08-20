@@ -48,6 +48,7 @@ _ENV_MAPPING_STORE = "MAPPING_STORE"
 _ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
 _ENV_AZURE_TABLE_ENDPOINT = "MAPPING_STORE_AZURE_TABLE_ENDPOINT"
 _ENV_AZURE_TABLE_NAME = "MAPPING_STORE_AZURE_TABLE_NAME"
+_ENV_REPO_MAPPING_CSV_PATH = "REPO_MAPPING_CSV_PATH"
 
 
 _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
@@ -56,6 +57,7 @@ _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
         "work_item_state_active",
         "work_item_state_closed",
         "work_item_description_field",
+        "area_path",
     },
 )
 
@@ -316,6 +318,13 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
         if tn:
             tree["mapping_store_azure_table_name"] = tn
 
+    if _ENV_REPO_MAPPING_CSV_PATH in os.environ:
+        csv_path = os.environ[_ENV_REPO_MAPPING_CSV_PATH].strip()
+        tree.setdefault("azure_boards", {})
+        if not isinstance(tree["azure_boards"], dict):
+            tree["azure_boards"] = {}
+        tree["azure_boards"]["repo_mapping_csv"] = csv_path
+
 
 def _reject_deprecated_flat_work_item_keys(ab_raw: dict[str, Any]) -> None:
     """Reject unsupported flat ``work_item_*`` keys under ``azure_boards`` root."""
@@ -483,6 +492,14 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         field_prefix="azure_boards.defaults.sync_included_snyk_origins",
     )
 
+    area_path_raw = defaults_raw.get("area_path")
+    area_path: str | None = None
+    if area_path_raw is not None:
+        if not isinstance(area_path_raw, str):
+            raise ConfigError("azure_boards.defaults.area_path must be a string")
+        stripped = area_path_raw.strip()
+        area_path = stripped if stripped else None
+
     return AzureBoardsDefaults(
         organization=org,
         project=proj,
@@ -498,6 +515,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         work_item_description_appendix=appendix,
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,
+        area_path=area_path,
     )
 
 
@@ -572,6 +590,12 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
     flat = _defaults_to_flat_config(defaults_obj)
     flat.org_mappings = org_mappings
 
+    repo_csv_raw = ab_raw.get("repo_mapping_csv")
+    if repo_csv_raw is not None:
+        if not isinstance(repo_csv_raw, str):
+            raise ConfigError("azure_boards.repo_mapping_csv must be a string")
+        flat.repo_mapping_csv = repo_csv_raw.strip()
+
     ms_raw = tree.get("mapping_store", DEFAULT_MAPPING_STORE)
     if ms_raw is None or (isinstance(ms_raw, str) and not ms_raw.strip()):
         ms_raw = DEFAULT_MAPPING_STORE
@@ -617,6 +641,7 @@ def load_app_config(
     cli_sqlite_path: str | None = None,
     cli_snyk_api_base_url: str | None = None,
     cli_snyk_app_base_url: str | None = None,
+    cli_repo_mapping_csv_path: str | None = None,
 ) -> AppConfig:
     """
     Load merged configuration: defaults → YAML file (if path) → env → CLI overrides.
@@ -625,10 +650,14 @@ def load_app_config(
     ``cli_sqlite_path`` is the top layer for ``sqlite_path`` when non-empty.
     ``cli_snyk_api_base_url`` is the top layer for ``snyk.api_base_url`` when non-empty.
     ``cli_snyk_app_base_url`` is the top layer for ``snyk.app_base_url`` when non-empty.
+    ``cli_repo_mapping_csv_path`` is the top layer for ``azure_boards.repo_mapping_csv``
+    when non-empty.
     """
     tree = _default_tree()
     path = resolve_config_path(config_path)
+    config_file_dir: str | None = None
     if path:
+        config_file_dir = str(_canonical_config_path(path).parent)
         overlay = load_yaml_file(path)
         _deep_merge_dict(tree, overlay)
     _apply_env_overrides(tree)
@@ -655,4 +684,11 @@ def load_app_config(
             cli_snyk_app_base_url.strip(),
             field_name="--snyk-app-base-url",
         )
-    return _tree_to_app_config(tree)
+    if cli_repo_mapping_csv_path is not None and cli_repo_mapping_csv_path.strip():
+        tree.setdefault("azure_boards", {})
+        if not isinstance(tree["azure_boards"], dict):
+            tree["azure_boards"] = {}
+        tree["azure_boards"]["repo_mapping_csv"] = cli_repo_mapping_csv_path.strip()
+    app = _tree_to_app_config(tree)
+    app.config_file_dir = config_file_dir
+    return app

@@ -3,6 +3,12 @@
 # stay in environment variables or Key Vault — never put them in this file.
 
 azure_boards:
+  # Repo-level area path / assignee routing CSV.
+  # Default (when omitted): repo-mapping.csv beside this file. sync fails at startup if that file is missing.
+  # Set repo_mapping_csv: "" to disable CSV routing and use YAML area_path only (see defaults below).
+  # See data/sample-repo-mapping.csv and CONFIGURATION.md. Co-locate on Azure Files with config.yaml.
+  # repo_mapping_csv: repo-mapping.csv
+  # repo_mapping_csv: ""
   defaults:
     # Routing for group-scoped sync (when org_mappings is absent): ADO org/project names.
     organization: "your-azure-devops-org"
@@ -19,6 +25,10 @@ azure_boards:
     work_item_type: Task
     work_item_state_active: New
     work_item_state_closed: Closed
+    # Optional YAML area path fallback (does not require a CSV file when repo_mapping_csv: "").
+    # When CSV routing is enabled: used only when no repo-mapping.csv row matches this issue
+    # (precedence: CSV row → org_mappings[].overrides.area_path → defaults.area_path → ADO default).
+    # area_path: "MyProject\\TeamA"
     # Omit work_item_description_field: sync auto-uses System.Description, then
     # Microsoft.VSTS.TCM.ReproSteps when Description is not on the work item type.
     # work_item_description_field: Microsoft.VSTS.TCM.ReproSteps  # explicit (e.g. Bug)
@@ -50,6 +60,8 @@ azure_boards:
   #       # Optional per-target origin allowlist (overrides azure_boards.defaults.sync_included_snyk_origins).
   #       # sync_included_snyk_origins: "github,gitlab"
   #       work_item_type: Task
+      #       # Per-org YAML area path when CSV is enabled but has no row for this issue.
+      #       # area_path: "MyProject\\TeamB"
   #       # work_item_description_appendix: "Note for this ADO project only."
   #       # work_item_template:
   #       #   tags: ["TeamA"]

@@ -32,6 +32,8 @@ class AzureBoardsDefaults:
     work_item_template: dict[str, Any] = field(default_factory=dict)
     #: Inclusive allowlist of Snyk ``attributes.origin`` values; ``None`` = no filter.
     sync_included_snyk_origins: tuple[str, ...] | None = None
+    #: Default Azure DevOps area path when no ``repo-mapping.csv`` row matches.
+    area_path: str | None = None
 
 
 @dataclass
@@ -62,6 +64,8 @@ class AzureBoardsConfig:
     defaults: AzureBoardsDefaults = field(default_factory=AzureBoardsDefaults)
     org_mappings: list[OrgMapping] = field(default_factory=list)
     sync_included_snyk_origins: tuple[str, ...] | None = None
+    #: Path to ``repo-mapping.csv`` (relative to config dir or absolute); see loader.
+    repo_mapping_csv: str | None = None
 
 
 @dataclass
@@ -92,3 +96,5 @@ class AppConfig:
     mapping_store_azure_table_endpoint: str = ""
     #: Table name when ``mapping_store`` is ``azure_table`` (non-secret).
     mapping_store_azure_table_name: str = ""
+    #: Directory containing the loaded YAML config file, when loaded from disk.
+    config_file_dir: str | None = None

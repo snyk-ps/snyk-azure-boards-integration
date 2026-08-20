@@ -2,7 +2,7 @@
 
 ### Requirement: Azure Boards defaults — optional area path
 
-Under **`azure_boards.defaults`**, the configuration MAY include **`area_path`**, an optional **non-secret string** holding a full Azure DevOps area path (for example **`MyProject\\TeamA`** or **`MyProject\\Area\\SubArea`**). When omitted or whitespace-only after trim, no default area path is configured at this layer.
+The loader SHALL accept an optional **`area_path`** string under **`azure_boards.defaults`**, holding a full Azure DevOps area path (for example **`MyProject\\TeamA`** or **`MyProject\\Area\\SubArea`**). When omitted or whitespace-only after trim, no default area path is configured at this layer.
 
 The loader SHALL reject a non-string value for **`area_path`**. The loader SHALL **not** accept **`area_path`** as a direct child of **`azure_boards`**; it belongs only under **`azure_boards.defaults`**.
 

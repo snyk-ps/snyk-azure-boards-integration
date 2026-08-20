@@ -71,11 +71,18 @@ For CSV lookup, the implementation SHALL parse **`snyk_project_name`** (after tr
 - When a **`/`** is present: **`owner`** = segment before **`/`**, **`repo`** = segment after **`/`** (each trimmed).
 - When no **`/`** is present: **`owner`** = empty string, **`repo`** = full trimmed name.
 
+After extracting **`repo`**, the implementation SHALL strip any Snyk target suffix beginning at the first **`(`** character (for example **`nodejs-goof(main):package.json`** → **`nodejs-goof`**).
+
 CSV **`GitHub Org/ADO Project`** SHALL match **`owner`**; CSV **`Repo Name`** SHALL match **`repo`**. All comparisons SHALL be case-sensitive after trim.
 
 #### Scenario: Standard owner/repo name parses
 
 - **WHEN** **`snyk_project_name`** is **`my-org/payments-api`**
+- **THEN** lookup uses **`owner=my-org`** and **`repo=payments-api`**
+
+#### Scenario: Branch and manifest suffix stripped from repo segment
+
+- **WHEN** **`snyk_project_name`** is **`my-org/payments-api(main):package.json`**
 - **THEN** lookup uses **`owner=my-org`** and **`repo=payments-api`**
 
 #### Scenario: Name without slash uses repo-only key
@@ -87,7 +94,7 @@ CSV **`GitHub Org/ADO Project`** SHALL match **`owner`**; CSV **`Repo Name`** SH
 
 ### Requirement: Repo mapping CSV path resolution
 
-Under **`azure_boards`**, the configuration MAY include **`repo_mapping_csv`**, a non-secret string path to the CSV file.
+The loader SHALL resolve an effective **`repo-mapping.csv`** path from **`azure_boards.repo_mapping_csv`**, environment variable **`REPO_MAPPING_CSV_PATH`**, or the default filename beside the loaded YAML configuration file.
 
 When **`repo_mapping_csv`** is omitted and no environment or CLI layer overrides the path, the effective path SHALL be **`repo-mapping.csv`** in the **same directory as the loaded YAML configuration file**.
 

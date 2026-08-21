@@ -186,7 +186,7 @@ data/*.csv
 !data/sample-repo-mapping.csv
 !data/sample-orgs.csv
 data/*debug*
-
+data/config.yaml
 
 # macOS
 .DS_Store

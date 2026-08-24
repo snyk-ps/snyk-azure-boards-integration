@@ -2,7 +2,7 @@
 
 ### Requirement: Optional CSV work item taxonomy columns
 
-The operator **`repo-mapping.csv`** MAY include optional column headers (matched case-insensitively after ASCII **`strip`**):
+The operator **`repo-mapping.csv`** SHALL support optional column headers (matched case-insensitively after ASCII **`strip`**):
 
 - **`Work Item Type (Optional)`** (alias: **`Work Item Type`**)
 - **`Active State (Optional)`** (alias: **`Active State`**)

@@ -32,4 +32,4 @@
 
 ## 6. Archive (human step)
 
-- [ ] 6.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/ado-target-work-item-profiles/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive ado-target-work-item-profiles`** to fold deltas into canonical specs.
+- [x] 6.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/ado-target-work-item-profiles/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive ado-target-work-item-profiles`** to fold deltas into canonical specs.

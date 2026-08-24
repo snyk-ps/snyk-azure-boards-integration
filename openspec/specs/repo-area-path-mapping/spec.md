@@ -13,7 +13,7 @@ The operator **`repo-mapping.csv`** file SHALL be a UTF-8 CSV with a header row.
 - **`ADO Organization`**
 - **`Area Path`**
 
-An optional column **`Assignee (Optional)`** MAY be present. The loader SHALL also accept the legacy header **`Assignee`** as an alias for the optional assignee column. Additional columns SHALL be ignored.
+Optional columns **`Assignee (Optional)`** (alias: **`Assignee`**) and the optional work-item taxonomy columns defined in **Optional CSV work item taxonomy columns** MAY be present. Additional unrecognized columns SHALL be ignored.
 
 Each data row SHALL supply non-empty **`Source`**, **`ADO Organization`**, **`Area Path`**, and **`Repo Name`** after trim. **`GitHub Org/ADO Project`** MAY be empty after trim when matching uses repo-only keys (see **Owner/Repo parsing**).
 
@@ -23,8 +23,13 @@ The loader SHALL reject the file when required headers are missing, when any req
 
 #### Scenario: Valid CSV with optional assignee loads
 
-- **WHEN** the CSV contains headers **`Source`**, **`GitHub Org/ADO Project`**, **`Repo Name`**, **`ADO Organization`**, **`Area Path`**, **`Assignee (Optional)`** and valid data rows
+- **WHEN** the CSV contains required headers and valid data rows with optional **`Assignee (Optional)`**
 - **THEN** loading SHALL succeed and expose an index for lookup
+
+#### Scenario: Valid CSV with optional taxonomy columns loads
+
+- **WHEN** the CSV adds optional headers **`Work Item Type (Optional)`** and **`Tags (Optional)`**
+- **THEN** loading SHALL succeed
 
 #### Scenario: Legacy Assignee header accepted
 
@@ -50,6 +55,81 @@ The loader SHALL reject the file when required headers are missing, when any req
 
 - **WHEN** two rows normalize to the same **(Source, scope, repo)** key
 - **THEN** loading SHALL fail with a clear error identifying the duplicate key
+
+---
+
+### Requirement: Optional CSV work item taxonomy columns
+
+The operator **`repo-mapping.csv`** SHALL support optional column headers (matched case-insensitively after ASCII **`strip`**):
+
+- **`Work Item Type (Optional)`** (alias: **`Work Item Type`**)
+- **`Active State (Optional)`** (alias: **`Active State`**)
+- **`Closed State (Optional)`** (alias: **`Closed State`**)
+- **`Description Field (Optional)`** (alias: **`Description Field`**)
+- **`Tags (Optional)`** (alias: **`Tags`**)
+
+When a CSV row matches an issue, a **non-empty** cell in any optional taxonomy column SHALL override that field only for that issue, per **Work item taxonomy precedence**. Empty or whitespace-only cells SHALL be ignored (fall through to lower precedence).
+
+**`Tags (Optional)`** values SHALL be semicolon-separated tag strings (Azure Boards **`System.Tags`** convention). Tags from CSV SHALL be **merged** with effective profile/template tags: profile tags first, then CSV tag tokens, deduplicated while preserving order.
+
+The loader SHALL NOT require these columns. Unrecognized extra columns SHALL continue to be ignored.
+
+#### Scenario: CSV work item type override applies
+
+- **WHEN** a matching CSV row has **`Work Item Type (Optional)`** **`Bug`**
+- **THEN** the effective work item type for that issue SHALL be **`Bug`** regardless of **`ado_targets`** or **`defaults`**
+
+#### Scenario: Empty CSV taxonomy cell falls through
+
+- **WHEN** a matching CSV row has empty **`Active State (Optional)`** and **`ado_targets`** defines **`work_item_state_active`** **`New`**
+- **THEN** the effective active state SHALL be **`New`**
+
+#### Scenario: CSV tags merge with profile tags
+
+- **WHEN** effective profile tags are **`Snyk;Security`** and CSV **`Tags (Optional)`** is **`TeamA`**
+- **THEN** effective tags SHALL include **`Snyk`**, **`Security`**, and **`TeamA`** in that order without duplicates
+
+#### Scenario: Legacy header alias accepted
+
+- **WHEN** the CSV uses header **`Work Item Type`** instead of **`Work Item Type (Optional)`**
+- **THEN** loading SHALL succeed and treat that column as the optional work item type field
+
+---
+
+### Requirement: Work item taxonomy precedence
+
+For each issue, after effective ADO **`(organization, project)`** is resolved per **Area path and assignee precedence**, the implementation SHALL resolve each work-item taxonomy field (**`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, **`work_item_description_field`**, effective **`work_item_template`** / tags) using this order **per field** (first applicable wins):
+
+1. Non-empty matching CSV optional taxonomy column for that field (or tags merge rule for **`Tags (Optional)`**).
+2. Matching **`azure_boards.ado_targets`** entry for effective **`(organization, project)`** when that field is set on the entry.
+3. **`org_mappings[].overrides`** for the active Snyk org mapping row **only when** that row's **`(organization, project)`** equals the effective ADO target.
+4. **`azure_boards.defaults`**.
+
+Snyk-side policy fields (**`severity_threshold`**, **`sync_included_snyk_origins`**, **`issues_sync_from`**, etc.) SHALL **not** use this ladder; they remain merged from **`org_mappings[].overrides`** and **`defaults`** only.
+
+When CSV routes to an ADO project different from the active **`org_mappings`** row's **`(organization, project)`**, step 3 SHALL NOT apply for work-item taxonomy (steps 1, 2, 4 only).
+
+The implementation MAY log **`work_item_config_source`** as **`csv`**, **`ado_target`**, **`org_override`**, or **`defaults`** at INFO without secrets.
+
+#### Scenario: ado_targets applies for CSV-routed project
+
+- **WHEN** CSV routes to **`myado`/`PaymentsProject`**, **`ado_targets`** defines **`work_item_type`** **`Bug`** and **`work_item_state_active`** **`New`**, and the active **`org_mappings`** row targets a different project
+- **THEN** effective work item type SHALL be **`Bug`** and effective active state SHALL be **`New`**
+
+#### Scenario: Org override applies only for same ADO target
+
+- **WHEN** no CSV row matches, effective target is **`myado`/`DefaultProject`** from the active **`org_mappings`** row, no **`ado_targets`** entry exists, and **`overrides.work_item_type`** is **`Task`**
+- **THEN** effective work item type SHALL be **`Task`**
+
+#### Scenario: CSV field beats ado_targets
+
+- **WHEN** CSV row matches with **`Active State (Optional)`** **`Active`** and **`ado_targets`** defines **`work_item_state_active`** **`New`**
+- **THEN** effective active state SHALL be **`Active`**
+
+#### Scenario: Defaults when no higher source
+
+- **WHEN** no CSV taxonomy override, no **`ado_targets`** entry, and org override does not apply
+- **THEN** work-item taxonomy fields SHALL come from **`azure_boards.defaults`**
 
 ---
 
@@ -193,17 +273,17 @@ The implementation MAY log **`ado_target_source`** as **`csv`** or **`config`** 
 
 ### Requirement: Sample repo mapping CSV under data
 
-The repository SHALL include a tracked sample CSV under **`data/sample-repo-mapping.csv`** with placeholder non-secret values demonstrating **`Source`**, **`GitHub Org/ADO Project`**, **`Repo Name`**, **`ADO Organization`**, **`Area Path`**, and optional **`Assignee (Optional)`**. The sample SHALL be version-controlled and SHALL NOT be excluded by default **`.gitignore`** rules.
+The repository SHALL include a tracked sample CSV under **`data/sample-repo-mapping.csv`** with placeholder non-secret values demonstrating **`Source`**, **`GitHub Org/ADO Project`**, **`Repo Name`**, **`ADO Organization`**, **`Area Path`**, optional **`Assignee (Optional)`**, and documented optional taxonomy column headers. The sample SHALL be version-controlled and SHALL NOT be excluded by default **`.gitignore`** rules.
 
-**`CONFIGURATION.md`** and **`README.md`** SHALL document the CSV column definitions, **`ADO Organization`** and full **`Project\\Area`** **Area Path** semantics, **`github`** / **`azure-repos`** **Source** semantics, origin grouping table, **`Owner/Repo`** parsing, ADO target and area-path precedence, multi-project routing within one Snyk org, PAT scope requirements, and co-location with operator YAML on Azure Files (**`repo-mapping.csv`** beside **`config.yaml`**).
+**`CONFIGURATION.md`** and **`README.md`** SHALL document the CSV column definitions (including optional taxonomy columns), **`ADO Organization`** and full **`Project\\Area`** **Area Path** semantics, work-item taxonomy precedence with **`ado_targets`**, **`github`** / **`azure-repos`** **Source** semantics, origin grouping table, **`Owner/Repo`** parsing, ADO target and area-path precedence, multi-project routing within one Snyk org, PAT scope requirements, and co-location with operator YAML on Azure Files (**`repo-mapping.csv`** beside **`config.yaml`**).
 
 #### Scenario: Sample CSV present in clone
 
 - **WHEN** a developer clones the repository
 - **THEN** they SHALL find **`data/sample-repo-mapping.csv`** with documented column headers including **`ADO Organization`** and **`Assignee (Optional)`**
 
-#### Scenario: CONFIGURATION documents CSV format
+#### Scenario: CONFIGURATION documents CSV format and ado_targets precedence
 
 - **WHEN** an operator reads **`CONFIGURATION.md`**
-- **THEN** they SHALL find column definitions, ADO target routing from CSV, Source values, and precedence without reading source code
+- **THEN** they SHALL find optional taxonomy columns, **`ado_targets`**, and precedence without reading source code
 

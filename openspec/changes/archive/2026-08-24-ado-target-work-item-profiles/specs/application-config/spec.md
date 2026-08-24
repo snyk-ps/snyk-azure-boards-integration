@@ -2,7 +2,7 @@
 
 ### Requirement: Azure Boards ado_targets entry schema
 
-Under **`azure_boards`**, the configuration MAY include **`ado_targets`**, a list of mappings that define work-item taxonomy for a specific Azure DevOps **(organization, project)** destination.
+Under **`azure_boards`**, the configuration SHALL support an optional **`ado_targets`** list of mappings that define work-item taxonomy for a specific Azure DevOps **(organization, project)** destination.
 
 Each **`ado_targets[]`** element SHALL be a mapping containing:
 

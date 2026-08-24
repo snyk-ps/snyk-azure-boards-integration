@@ -582,6 +582,8 @@ The loader SHALL reject a non-string value for **`area_path`**. The loader SHALL
 
 **`CONFIGURATION.md`**, **`README.md`**, and the tracked sample YAML under **`data/`** SHALL document **`area_path`** as the YAML fallback when no **`repo-mapping.csv`** row matches, and SHALL document that **`org_mappings[].overrides.area_path`** overrides this default for that mapping row.
 
+**`CONFIGURATION.md`** and **`README.md`** SHALL also document that when a **`repo-mapping.csv`** row matches, per-repo ADO **organization** and **project** (from **Area Path**) override the YAML **`organization`** / **`project`** for that issue only, while **`config.yaml`** **`org_mappings`** remains one Snyk org per row (1:1 baseline).
+
 #### Scenario: Omitted area path defaults to unset at YAML layer
 
 - **WHEN** YAML omits **`azure_boards.defaults.area_path`**
@@ -607,7 +609,7 @@ The implementation SHALL recognize environment variable **`REPO_MAPPING_CSV_PATH
 
 The loader SHALL reject a non-string **`repo_mapping_csv`** value.
 
-**`CONFIGURATION.md`** and **`README.md`** SHALL document **`repo_mapping_csv`**, **`REPO_MAPPING_CSV_PATH`**, the default filename **`repo-mapping.csv`**, and Azure Files co-location beside operator YAML.
+**`CONFIGURATION.md`** and **`README.md`** SHALL document **`repo_mapping_csv`**, **`REPO_MAPPING_CSV_PATH`**, the default filename **`repo-mapping.csv`**, Azure Files co-location beside operator YAML, and the updated CSV column set (**`ADO Organization`**, full **`Project\\Area`** **Area Path**, **`Assignee (Optional)`**). Documentation SHALL note that **`AZURE_DEVOPS_PAT`** must authorize every ADO organization and project listed in the CSV.
 
 #### Scenario: repo_mapping_csv relative path resolves beside config
 
@@ -618,6 +620,24 @@ The loader SHALL reject a non-string **`repo_mapping_csv`** value.
 
 - **WHEN** YAML sets **`repo_mapping_csv`** and **`REPO_MAPPING_CSV_PATH`** is set in the environment
 - **THEN** the effective path SHALL be the environment value
+
+---
+
+### Requirement: Repo mapping CSV operator documentation in application config
+
+**`CONFIGURATION.md`** SHALL document the breaking CSV migration from prior formats: operators MUST add **`ADO Organization`** (non-empty per row) and MUST use full **`Project\\Area`** values in **Area Path**. Documentation SHALL explain that **`GitHub Org/ADO Project`** remains the Snyk-side match key, not the ADO routing destination.
+
+**`README.md`** Deployment section SHALL reference multi-project routing within one Snyk org via **`repo-mapping.csv`** without adding duplicate **`org_mappings`** rows.
+
+#### Scenario: CONFIGURATION documents CSV migration
+
+- **WHEN** an operator reads **`CONFIGURATION.md`**
+- **THEN** they SHALL find migration guidance for **`ADO Organization`** and full **Area Path** format
+
+#### Scenario: README documents one Snyk org multi-project pattern
+
+- **WHEN** an operator reads **`README.md`**
+- **THEN** they SHALL find that one **`org_mappings`** row plus **`repo-mapping.csv`** can route repos to multiple ADO projects
 
 ---
 

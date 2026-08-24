@@ -40,7 +40,7 @@ A missing id in one partition SHALL NOT cause the entire **`sync`** run to fail.
 
 ### Requirement: Routing migration when CSV ADO target changes
 
-When a mapping row exists and the stored **`organization`** or **`project`** differs from the newly resolved effective ADO target for that issue:
+When a mapping row exists and the stored **`organization`** or **`project`** differs from the newly resolved effective ADO target for that issue, **`sync`** SHALL apply the following rules:
 
 - If derived Snyk status is **`open`**, **`sync`** SHALL treat the row as requiring recreation in the new ADO target (subject to **`create_new_work_items`**, origin allowlist, and **`create_only_when_fix_available`** gates). After creating the replacement work item, **`sync`** SHALL upsert the mapping row with the new **`work_item_id`**, **`organization`**, and **`project`**, and SHALL add an audit comment on the **new** work item per **P2-FR-9** documenting the prior **`work_item_id`** and old and new ADO targets.
 

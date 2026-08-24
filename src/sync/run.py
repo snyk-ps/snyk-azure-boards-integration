@@ -8,7 +8,13 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import quote
 
-from config.models import REOPEN_POLICY_REOPEN_EXISTING, AppConfig, AzureBoardsConfig
+from config.models import (
+    REOPEN_POLICY_REOPEN_EXISTING,
+    AdoTargetIndex,
+    AppConfig,
+    AzureBoardsConfig,
+    OrgMapping,
+)
 from integrations.azure_devops.client import WorkItemsClient
 from integrations.azure_devops.errors import AzureDevOpsClientError
 from mapping_store.protocol import MappingRow, MappingStore
@@ -19,9 +25,10 @@ from snyk.client import GroupIssueListParams, IssuesClient
 from sync.azure_batch import batch_get_work_items
 from sync.description_field import DescriptionFieldResolver, warm_description_fields_for_sync
 from sync.effective import (
+    EffectiveWorkItemConfig,
     boards_for_org_mapping,
     effective_snyk_org_slug,
-    effective_work_item_template,
+    resolve_effective_work_item_config,
 )
 from sync.enrichment import enrich_issue_record
 from sync.issue_content import (
@@ -158,7 +165,24 @@ def _log_issue_routing(
     *,
     issue_key: str,
     routing: ResolvedRouting,
+    effective_wit: EffectiveWorkItemConfig | None = None,
 ) -> None:
+    if effective_wit is not None:
+        log.info(
+            "sync routing issue=%s ado_target_source=%s organization=%s project=%s "
+            "area_path_source=%s assignee_from_csv=%s work_item_config_source=%s "
+            "work_item_type=%s work_item_state_active=%s",
+            issue_key,
+            routing.ado_target_source,
+            routing.organization,
+            routing.project,
+            routing.area_path_source,
+            routing.assignee_from_csv,
+            effective_wit.work_item_config_source,
+            effective_wit.work_item_type,
+            effective_wit.work_item_state_active,
+        )
+        return
     log.info(
         "sync routing issue=%s ado_target_source=%s organization=%s project=%s "
         "area_path_source=%s assignee_from_csv=%s",
@@ -179,8 +203,7 @@ def _create_replacement_work_item(
     iid: str,
     ado_org: str,
     ado_proj: str,
-    ab: AzureBoardsConfig,
-    template: dict[str, Any],
+    effective_wit: EffectiveWorkItemConfig,
     description_field: str,
     wit_client: WorkItemsClient,
     store: MappingStore,
@@ -205,12 +228,17 @@ def _create_replacement_work_item(
 
     Returns the new work item id string.
     """
-    _log_issue_routing(log, issue_key=issue_key, routing=routing)
+    _log_issue_routing(
+        log,
+        issue_key=issue_key,
+        routing=routing,
+        effective_wit=effective_wit,
+    )
     patches = build_create_patch(
         title=title,
         description=description,
-        active_state=ab.work_item_state_active,
-        template=template,
+        active_state=effective_wit.work_item_state_active,
+        template=effective_wit.template,
         issue_effective_severity_level=severity_level_for_tags,
         issue_snyk_type=issue_snyk_type,
         app_base_url=app_base_url,
@@ -221,7 +249,7 @@ def _create_replacement_work_item(
     created = wit_client.create_work_item(
         ado_org,
         ado_proj,
-        ab.work_item_type,
+        effective_wit.work_item_type,
         patches,
     )
     new_wid = str(created.get("work_item_id", ""))
@@ -353,7 +381,6 @@ def _run_sync_body(
             _ = description_field  # warmed; per-issue resolve uses description_fields
             levels = effective_severity_levels_from_threshold(boards.severity_threshold)
             list_params = GroupIssueListParams(effective_severity_levels=levels)
-            template = effective_work_item_template(config, m.overrides, boards=boards)
             store_gid = config.snyk.group_id.strip() or m.snyk_org_id.strip()
             slug = effective_snyk_org_slug(config, m)
             raw_issues = list(
@@ -377,7 +404,9 @@ def _run_sync_body(
                 ado_org=boards.organization.strip(),
                 ado_proj=boards.project.strip(),
                 boards=boards,
-                template=template,
+                app=config,
+                org_mapping=m,
+                ado_target_index=config.azure_boards.ado_target_index,
                 description_fields=description_fields,
                 wit_client=wit_client,
                 store=store,
@@ -406,7 +435,6 @@ def _run_sync_body(
     _ = description_field  # warmed; per-issue resolve uses description_fields
     levels = effective_severity_levels_from_threshold(boards_flat.severity_threshold)
     list_params = GroupIssueListParams(effective_severity_levels=levels)
-    template = effective_work_item_template(config, None, boards=boards_flat)
     slug = effective_snyk_org_slug(config, None)
     raw_issues = list(issues_client.iter_group_issues(group_id, list_params=list_params))
     issues = [
@@ -424,7 +452,9 @@ def _run_sync_body(
         ado_org=boards_flat.organization.strip(),
         ado_proj=boards_flat.project.strip(),
         boards=boards_flat,
-        template=template,
+        app=config,
+        org_mapping=None,
+        ado_target_index=config.azure_boards.ado_target_index,
         description_fields=description_fields,
         wit_client=wit_client,
         store=store,
@@ -449,7 +479,9 @@ def _run_sync_batch(
     ado_org: str,
     ado_proj: str,
     boards: AzureBoardsConfig,
-    template: dict[str, Any],
+    app: AppConfig,
+    org_mapping: OrgMapping | None,
+    ado_target_index: AdoTargetIndex,
     description_fields: DescriptionFieldResolver,
     wit_client: WorkItemsClient,
     store: MappingStore,
@@ -505,7 +537,9 @@ def _run_sync_batch(
                 config_ado_org=ado_org,
                 config_ado_proj=ado_proj,
                 boards=boards,
-                template=template,
+                app=app,
+                org_mapping=org_mapping,
+                ado_target_index=ado_target_index,
                 description_fields=description_fields,
                 wit_client=wit_client,
                 store=store,
@@ -533,7 +567,9 @@ def _sync_one_issue(
     config_ado_org: str,
     config_ado_proj: str,
     boards: AzureBoardsConfig,
-    template: dict[str, Any],
+    app: AppConfig,
+    org_mapping: OrgMapping | None,
+    ado_target_index: AdoTargetIndex,
     description_fields: DescriptionFieldResolver,
     wit_client: WorkItemsClient,
     store: MappingStore,
@@ -638,11 +674,20 @@ def _sync_one_issue(
     )
     effective_org = routing.organization
     effective_proj = routing.project
+    effective_wit = resolve_effective_work_item_config(
+        app=app,
+        boards=boards,
+        org_mapping=org_mapping,
+        ado_target_index=ado_target_index,
+        effective_organization=effective_org,
+        effective_project=effective_proj,
+        csv_match=routing.csv_match,
+    )
     description_field = description_fields.resolve(
         effective_org,
         effective_proj,
-        ab.work_item_type,
-        ab.defaults.work_item_description_field,
+        effective_wit.work_item_type,
+        effective_wit.work_item_description_field,
     )
 
     target_label = effective_target_label_for_title(
@@ -703,8 +748,7 @@ def _sync_one_issue(
                 iid=iid,
                 ado_org=effective_org,
                 ado_proj=effective_proj,
-                ab=ab,
-                template=template,
+                effective_wit=effective_wit,
                 description_field=description_field,
                 wit_client=wit_client,
                 store=store,
@@ -791,12 +835,17 @@ def _sync_one_issue(
         if ab.create_only_when_fix_available and not attrs_indicate_fix_available(attrs):
             log.debug("sync skip create (no fix available) issue=%s", issue_key)
             return
-        _log_issue_routing(log, issue_key=issue_key, routing=routing)
+        _log_issue_routing(
+            log,
+            issue_key=issue_key,
+            routing=routing,
+            effective_wit=effective_wit,
+        )
         patches = build_create_patch(
             title=title,
             description=description,
-            active_state=ab.work_item_state_active,
-            template=template,
+            active_state=effective_wit.work_item_state_active,
+            template=effective_wit.template,
             issue_effective_severity_level=severity_level_for_tags,
             issue_snyk_type=issue_snyk_type,
             app_base_url=app_base_url,
@@ -807,7 +856,7 @@ def _sync_one_issue(
         created = wit_client.create_work_item(
             effective_org,
             effective_proj,
-            ab.work_item_type,
+            effective_wit.work_item_type,
             patches,
         )
         wid = str(created.get("work_item_id", ""))
@@ -865,16 +914,21 @@ def _sync_one_issue(
                         issue_key,
                     )
                     return
-                target_state = ab.work_item_state_active
+                target_state = effective_wit.work_item_state_active
                 current_area = _work_item_area_path(existing)
                 effective_area = str(routing.area_path or "").strip()
                 patch_area = bool(effective_area and effective_area != current_area)
-                _log_issue_routing(log, issue_key=issue_key, routing=routing)
+                _log_issue_routing(
+                    log,
+                    issue_key=issue_key,
+                    routing=routing,
+                    effective_wit=effective_wit,
+                )
                 patches = build_update_patch(
                     title=title,
                     description=description,
                     state=target_state,
-                    template=template,
+                    template=effective_wit.template,
                     issue_effective_severity_level=severity_level_for_tags,
                     issue_snyk_type=issue_snyk_type,
                     app_base_url=app_base_url,
@@ -941,8 +995,7 @@ def _sync_one_issue(
             iid=iid,
             ado_org=effective_org,
             ado_proj=effective_proj,
-            ab=ab,
-            template=template,
+            effective_wit=effective_wit,
             description_field=description_field,
             wit_client=wit_client,
             store=store,
@@ -1024,8 +1077,7 @@ def _sync_one_issue(
             iid=iid,
             ado_org=effective_org,
             ado_proj=effective_proj,
-            ab=ab,
-            template=template,
+            effective_wit=effective_wit,
             description_field=description_field,
             wit_client=wit_client,
             store=store,
@@ -1048,19 +1100,24 @@ def _sync_one_issue(
         return
 
     target_state = (
-        ab.work_item_state_closed
+        effective_wit.work_item_state_closed
         if new_status in (DERIVED_RESOLVED, DERIVED_IGNORED)
-        else ab.work_item_state_active
+        else effective_wit.work_item_state_active
     )
     current_area = _work_item_area_path(wi)
     effective_area = str(routing.area_path or "").strip()
     patch_area = bool(effective_area and effective_area != current_area)
-    _log_issue_routing(log, issue_key=issue_key, routing=routing)
+    _log_issue_routing(
+        log,
+        issue_key=issue_key,
+        routing=routing,
+        effective_wit=effective_wit,
+    )
     patches = build_update_patch(
         title=title,
         description=description,
         state=target_state,
-        template=template,
+        template=effective_wit.template,
         issue_effective_severity_level=severity_level_for_tags,
         issue_snyk_type=issue_snyk_type,
         app_base_url=app_base_url,

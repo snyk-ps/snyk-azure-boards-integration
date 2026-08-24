@@ -18,6 +18,8 @@ from config.models import (
     DEFAULT_SQLITE_PATH,
     ISSUES_SYNC_FROM_HISTORICAL,
     REOPEN_POLICY_NEW_WORK_ITEM,
+    AdoTargetIndex,
+    AdoTargetProfile,
     AppConfig,
     AzureBoardsConfig,
     AzureBoardsDefaults,
@@ -362,6 +364,100 @@ def _string_from_defaults_section(
     return s if s else hard_default
 
 
+_ADO_TARGET_ALLOWED_KEYS: frozenset[str] = frozenset(
+    {
+        "organization",
+        "project",
+        "work_item_type",
+        "work_item_state_active",
+        "work_item_state_closed",
+        "work_item_description_field",
+        "work_item_template",
+    },
+)
+
+
+def _optional_trimmed_string(raw: object) -> str | None:
+    """Return stripped string or ``None`` when absent or whitespace-only."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s if s else None
+
+
+def _parse_work_item_template(raw: object, *, field_prefix: str) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{field_prefix} must be a mapping")
+    return dict(raw)
+
+
+def _parse_ado_targets(ab_raw: dict[str, Any]) -> tuple[list[AdoTargetProfile], AdoTargetIndex]:
+    """Parse ``azure_boards.ado_targets`` and build a lookup index."""
+    raw = ab_raw.get("ado_targets")
+    if raw is None:
+        return [], AdoTargetIndex.empty()
+    if not isinstance(raw, list):
+        raise ConfigError("azure_boards.ado_targets must be a list")
+
+    profiles: list[AdoTargetProfile] = []
+    seen: set[tuple[str, str]] = set()
+    for i, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ConfigError(f"azure_boards.ado_targets[{i}] must be a mapping")
+        unknown = set(item.keys()) - _ADO_TARGET_ALLOWED_KEYS
+        if unknown:
+            allowed = ", ".join(sorted(_ADO_TARGET_ALLOWED_KEYS))
+            raise ConfigError(
+                f"azure_boards.ado_targets[{i}] has unknown key(s): "
+                f"{', '.join(sorted(unknown))}; allowed: {allowed}",
+            )
+        org = str(item.get("organization", "") or "").strip()
+        proj = str(item.get("project", "") or "").strip()
+        if not org:
+            raise ConfigError(
+                f"azure_boards.ado_targets[{i}].organization is required",
+            )
+        if not proj:
+            raise ConfigError(
+                f"azure_boards.ado_targets[{i}].project is required",
+            )
+        key = (org, proj)
+        if key in seen:
+            raise ConfigError(
+                f"azure_boards.ado_targets has duplicate (organization, project) "
+                f"({org!r}, {proj!r})",
+            )
+        seen.add(key)
+
+        desc_field = normalize_work_item_description_field(
+            item.get("work_item_description_field"),
+            field_prefix=f"azure_boards.ado_targets[{i}].work_item_description_field",
+        )
+        template = _parse_work_item_template(
+            item.get("work_item_template"),
+            field_prefix=f"azure_boards.ado_targets[{i}].work_item_template",
+        )
+        profiles.append(
+            AdoTargetProfile(
+                organization=org,
+                project=proj,
+                work_item_type=_optional_trimmed_string(item.get("work_item_type")),
+                work_item_state_active=_optional_trimmed_string(
+                    item.get("work_item_state_active"),
+                ),
+                work_item_state_closed=_optional_trimmed_string(
+                    item.get("work_item_state_closed"),
+                ),
+                work_item_description_field=desc_field,
+                work_item_template=template,
+            ),
+        )
+    index = AdoTargetIndex.from_profiles(profiles)
+    return profiles, index
+
+
 def _parse_org_mappings(ab_raw: dict[str, Any]) -> list[OrgMapping]:
     raw = ab_raw.get("org_mappings")
     if raw is None:
@@ -586,9 +682,12 @@ def _tree_to_app_config(tree: dict[str, Any]) -> AppConfig:
 
     defaults_obj = _parse_azure_boards_defaults(ab_raw)
     org_mappings = _parse_org_mappings(ab_raw)
+    ado_targets, ado_target_index = _parse_ado_targets(ab_raw)
 
     flat = _defaults_to_flat_config(defaults_obj)
     flat.org_mappings = org_mappings
+    flat.ado_targets = ado_targets
+    flat.ado_target_index = ado_target_index
 
     repo_csv_raw = ab_raw.get("repo_mapping_csv")
     if repo_csv_raw is not None:

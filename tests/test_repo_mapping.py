@@ -284,3 +284,23 @@ def test_resolve_routing_none_when_unset() -> None:
     assert routing.project == "cfg-p"
     assert routing.area_path is None
     assert routing.area_path_source == "none"
+
+
+_TAXONOMY_CSV = (
+    "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path,"
+    "Assignee (Optional),Work Item Type (Optional),Active State (Optional),"
+    "Tags (Optional)\n"
+    "github,my-org,payments-api,ado-o,MyProject\\Payments,user@example.com,"
+    "Bug,Active,TeamA\n"
+)
+
+
+def test_repo_mapping_csv_optional_taxonomy_columns(tmp_path: Path) -> None:
+    path = tmp_path / "repo-mapping.csv"
+    path.write_text(_TAXONOMY_CSV, encoding="utf-8")
+    index = RepoMappingIndex.load_from_path(path)
+    match = index.lookup("github", "my-org", "payments-api")
+    assert match is not None
+    assert match.work_item_type == "Bug"
+    assert match.work_item_state_active == "Active"
+    assert match.csv_tags == ("TeamA",)

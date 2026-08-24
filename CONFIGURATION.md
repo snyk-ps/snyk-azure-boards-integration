@@ -50,6 +50,26 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `work_item_template` | object | (see below) | **`tags`**, optional **`json_patch`**; see **`work_item_template`**. |
 | `area_path` | string | (omit) | Fallback **`System.AreaPath`** when no **`repo-mapping.csv`** row matches. Overridable per **`org_mappings`** row via **`overrides.area_path`**. |
 
+## `azure_boards.ado_targets` (optional)
+
+Per ADO **`(organization, project)`** work item profiles for multi-project CSV routing. Each list entry defines taxonomy fields that apply when **`sync`** creates or updates work items in that destination.
+
+| Subkey | Required | Notes |
+| ------ | -------- | ----- |
+| `organization` | yes | Azure DevOps organization name (must match CSV **ADO Organization** when routing via CSV). |
+| `project` | yes | Azure DevOps project name (must match the first segment of CSV **Area Path** when routing via CSV). |
+| `work_item_type` | no | Work item type for creates in this ADO project (e.g. **`Bug`**). |
+| `work_item_state_active` | no | Active state name for creates/reopens (e.g. **`New`**). |
+| `work_item_state_closed` | no | Closed state when resolving issues (e.g. **`Closed`**). |
+| `work_item_description_field` | no | Field reference name override for this ADO project/type. |
+| `work_item_template` | no | Partial template (tags, **`json_patch`**) merged with global and defaults templates. |
+
+Duplicate **`(organization, project)`** pairs are rejected at load time. When **`ado_targets`** is omitted or empty, behavior is unchanged.
+
+**Precedence:** See **[repo-mapping.csv § work item taxonomy precedence](CONFIGURATION.md#azure_boardsrepo_mapping_csv)**. Explicit **`ado_targets`** entries beat **`org_mappings[].overrides`** work-item fields for the same ADO target. Org-mapping overrides still apply when no matching **`ado_targets`** row exists.
+
+**Recommendation:** Add one **`ado_targets`** entry for every distinct ADO project referenced in **`repo-mapping.csv`** (first **Area Path** segment) that uses a different work item process than **`defaults`**.
+
 ## `azure_boards.repo_mapping_csv`
 
 | Subkey | Type | Default | Notes |
@@ -66,10 +86,24 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | **ADO Organization** | yes | Azure DevOps **organization** for work items when this row matches. Required on every data row (non-empty). |
 | **Area Path** | yes | Full Azure DevOps area path in **`Project\\Area`** form (at least two segments). The first segment is the ADO **project** used for REST routing; the full value is written to **`System.AreaPath`**. |
 | **Assignee (Optional)** | no | When present on a matching row, **always overrides** YAML/template assignee on create **and** update. Legacy header **`Assignee`** is also accepted. |
+| **Work Item Type (Optional)** | no | Per-issue work item type override (e.g. **`Bug`**). Legacy header **`Work Item Type`** is also accepted. |
+| **Active State (Optional)** | no | Per-issue active state override on create/reopen. Legacy header **`Active State`** is also accepted. |
+| **Closed State (Optional)** | no | Per-issue closed state override when resolving issues. Legacy header **`Closed State`** is also accepted. |
+| **Description Field (Optional)** | no | Azure DevOps field reference name for Snyk narrative body (e.g. **`Microsoft.VSTS.TCM.ReproSteps`**). Legacy header **`Description Field`** is also accepted. |
+| **Tags (Optional)** | no | Semicolon-separated tags merged with YAML/template tags on create. Legacy header **`Tags`** is also accepted. |
 
 **Matching:** Snyk project names are typically **`Owner/Repo`**, but issue payloads may append a branch and manifest suffix (for example **`Owner/Repo(main):package.json`**). **`sync`** splits on the first **`/`**, strips any **`(branch):manifest`** suffix from the repo segment, and matches together with grouped origin → **Source**.
 
 **Precedence (ADO target):** When a CSV row matches, **ADO Organization** and the **first Area Path segment** (project) override the YAML **`org_mappings`** / **`defaults`** target for that issue only. When no row matches, YAML **`organization`** / **`project`** apply unchanged.
+
+**Precedence (work item taxonomy):** Per field, when resolving type, states, description field, and tags for an issue:
+
+1. Non-empty optional CSV column on the matching row
+2. Matching **`azure_boards.ado_targets`** entry for effective **`(organization, project)`**
+3. **`org_mappings[].overrides`** — only when the effective ADO target equals that mapping row's **`organization`** / **`project`**
+4. **`azure_boards.defaults`**
+
+Define one **`ado_targets`** entry for each distinct ADO **`(organization, project)`** referenced in CSV **Area Path** first segments (and your **`org_mappings`** baseline when it differs from CSV-routed projects). Without **`ado_targets`**, CSV-routed projects inherit **`defaults`** work item type and states, which may not match the target project's process (ADO create/update may fail with HTTP 400).
 
 **Multi-project within one Snyk org:** Keep a single **`org_mappings`** row (1:1 Snyk org baseline) and use **`repo-mapping.csv`** to route different repositories to different ADO projects. Do **not** duplicate **`snyk_org_id`** rows in YAML.
 

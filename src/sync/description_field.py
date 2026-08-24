@@ -7,7 +7,7 @@ from config.field_refs import AUTO_DESCRIPTION_FIELD_ORDER
 from config.models import AppConfig
 from integrations.azure_devops.client import WorkItemsClient
 
-from sync.effective import boards_for_org_mapping
+from sync.effective import boards_for_org_mapping, resolve_effective_work_item_config
 
 
 class DescriptionFieldResolver:
@@ -74,26 +74,83 @@ def _pick_auto_description_field(
     )
 
 
+def _warm_profile_description_field(
+    config: AppConfig,
+    resolver: DescriptionFieldResolver,
+    *,
+    organization: str,
+    project: str,
+    work_item_type: str,
+    description_field: str | None,
+) -> None:
+    resolver.resolve(
+        organization,
+        project,
+        work_item_type,
+        description_field,
+    )
+
+
 def warm_description_fields_for_sync(
     config: AppConfig,
     resolver: DescriptionFieldResolver,
 ) -> None:
     """Resolve description fields for every routing context before the issue loop."""
     ab = config.azure_boards
+    defaults = ab.defaults
+
+    for profile in ab.ado_targets:
+        wit_type = profile.work_item_type or defaults.work_item_type
+        desc_field = (
+            profile.work_item_description_field
+            if profile.work_item_description_field is not None
+            else defaults.work_item_description_field
+        )
+        _warm_profile_description_field(
+            config,
+            resolver,
+            organization=profile.organization,
+            project=profile.project,
+            work_item_type=wit_type,
+            description_field=desc_field,
+        )
+
     if ab.org_mappings:
         for mapping in ab.org_mappings:
             boards = boards_for_org_mapping(config, mapping)
-            resolver.resolve(
-                boards.organization,
-                boards.project,
-                boards.work_item_type,
-                boards.defaults.work_item_description_field,
+            effective = resolve_effective_work_item_config(
+                app=config,
+                boards=boards,
+                org_mapping=mapping,
+                ado_target_index=ab.ado_target_index,
+                effective_organization=boards.organization,
+                effective_project=boards.project,
+                csv_match=None,
+            )
+            _warm_profile_description_field(
+                config,
+                resolver,
+                organization=boards.organization,
+                project=boards.project,
+                work_item_type=effective.work_item_type,
+                description_field=effective.work_item_description_field,
             )
         return
 
-    resolver.resolve(
-        ab.organization,
-        ab.project,
-        ab.work_item_type,
-        ab.defaults.work_item_description_field,
+    effective = resolve_effective_work_item_config(
+        app=config,
+        boards=ab,
+        org_mapping=None,
+        ado_target_index=ab.ado_target_index,
+        effective_organization=ab.organization,
+        effective_project=ab.project,
+        csv_match=None,
+    )
+    _warm_profile_description_field(
+        config,
+        resolver,
+        organization=ab.organization,
+        project=ab.project,
+        work_item_type=effective.work_item_type,
+        description_field=effective.work_item_description_field,
     )

@@ -107,6 +107,74 @@ def test_run_sync_create_uses_csv_ado_target_and_area_path(
     assert assignee_ops and assignee_ops[0]["value"] == "csv@example.com"
 
 
+def _cfg_yaml_with_ado_targets(*, repo_csv: str = "repo-mapping.csv") -> str:
+    return (
+        "azure_boards:\n"
+        f"  repo_mapping_csv: {repo_csv!r}\n"
+        "  defaults:\n"
+        "    organization: ado-o\n"
+        "    project: ado-p\n"
+        "    work_item_type: Task\n"
+        "    work_item_state_active: To Do\n"
+        "    work_item_state_closed: Done\n"
+        "  ado_targets:\n"
+        "    - organization: ado-o\n"
+        "      project: MyProject\n"
+        "      work_item_type: Bug\n"
+        "      work_item_state_active: New\n"
+        "      work_item_state_closed: Closed\n"
+        "  org_mappings:\n"
+        "    - organization: ado-o\n"
+        "      project: ado-p\n"
+        "      snyk_org_id: org-uuid\n"
+        "      snyk_org_slug: org-slug\n"
+        "      overrides:\n"
+        "        work_item_type: Task\n"
+        "        work_item_state_active: To Do\n"
+        "snyk:\n"
+        '  group_id: "group-uuid"\n'
+    )
+
+
+def test_run_sync_create_uses_ado_targets_work_item_taxonomy_for_csv_project(
+    tmp_path: Path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CSV-routed project uses ado_targets Bug/New, not defaults Task/To Do."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(_cfg_yaml_with_ado_targets(), encoding="utf-8")
+    (tmp_path / "repo-mapping.csv").write_text(_MINIMAL_CSV, encoding="utf-8")
+    cfg = load_app_config(config_path=str(cfg_path), cli_group_id=None)
+
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
+    wit.create_work_item.return_value = {
+        "work_item_id": "42",
+        "work_item_status": "New",
+    }
+
+    monkeypatch.setattr(issues, "iter_org_issues", lambda *a, **k: iter([_open_issue()]))
+    monkeypatch.setattr(
+        issues,
+        "get_org_project",
+        lambda org, pid: {"name": "my-org/payments-api", "origin": "github"},
+    )
+    monkeypatch.setattr("sync.run.batch_get_work_items", lambda *a, **k: {})
+
+    rc = run_sync(config=cfg, issues_client=issues, wit_client=wit, store=store)
+    assert rc == 0
+    create_args = wit.create_work_item.call_args[0]
+    assert create_args[0] == "ado-o"
+    assert create_args[1] == "MyProject"
+    assert create_args[2] == "Bug"
+    state_ops = [o for o in create_args[3] if o.get("path") == "/fields/System.State"]
+    assert state_ops and state_ops[0]["value"] == "New"
+
+
 def test_run_sync_update_moves_area_path_with_comment(
     tmp_path: Path,
     env_pat: None,

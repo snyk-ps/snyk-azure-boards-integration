@@ -33,6 +33,15 @@ _REQUIRED_HEADERS: tuple[str, ...] = (
 
 _ASSIGNEE_HEADER_KEYS: tuple[str, ...] = ("assignee (optional)", "assignee")
 
+_WIT_TYPE_HEADER_KEYS: tuple[str, ...] = ("work item type (optional)", "work item type")
+_ACTIVE_STATE_HEADER_KEYS: tuple[str, ...] = ("active state (optional)", "active state")
+_CLOSED_STATE_HEADER_KEYS: tuple[str, ...] = ("closed state (optional)", "closed state")
+_DESC_FIELD_HEADER_KEYS: tuple[str, ...] = (
+    "description field (optional)",
+    "description field",
+)
+_TAGS_HEADER_KEYS: tuple[str, ...] = ("tags (optional)", "tags")
+
 
 def snyk_origin_to_csv_source(origin: str) -> str | None:
     """
@@ -113,6 +122,11 @@ class RepoMappingMatch:
     project: str
     area_path: str
     assignee: str
+    work_item_type: str | None = None
+    work_item_state_active: str | None = None
+    work_item_state_closed: str | None = None
+    work_item_description_field: str | None = None
+    csv_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,6 +140,7 @@ class ResolvedRouting:
     ado_target_source: str
     area_path_source: str
     assignee_from_csv: bool
+    csv_match: RepoMappingMatch | None = None
 
 
 class RepoMappingIndex:
@@ -178,6 +193,7 @@ class RepoMappingIndex:
             ado_org = record[3]
             area_path = record[4]
             assignee = record[5]
+            taxonomy = record[6]
             try:
                 ado_project, _full = parse_area_path_for_project(area_path)
             except ConfigError as exc:
@@ -189,6 +205,11 @@ class RepoMappingIndex:
                 project=ado_project,
                 area_path=area_path,
                 assignee=assignee,
+                work_item_type=taxonomy[0],
+                work_item_state_active=taxonomy[1],
+                work_item_state_closed=taxonomy[2],
+                work_item_description_field=taxonomy[3],
+                csv_tags=taxonomy[4],
             )
         return cls(rows)
 
@@ -260,6 +281,7 @@ def resolve_routing(
             ado_target_source="csv",
             area_path_source="csv",
             assignee_from_csv=bool(assignee),
+            csv_match=csv_match,
         )
 
     yaml_path = boards.defaults.area_path
@@ -316,13 +338,42 @@ def _assignee_from_row(row: list[str], header_map: Mapping[str, int]) -> str:
     return ""
 
 
+def _optional_cell_from_row(
+    row: list[str],
+    header_map: Mapping[str, int],
+    keys: tuple[str, ...],
+) -> str | None:
+    for key in keys:
+        if key in header_map:
+            idx = header_map[key]
+            if idx < len(row):
+                value = str(row[idx] or "").strip()
+                if value:
+                    return value
+    return None
+
+
+def _tags_from_row(row: list[str], header_map: Mapping[str, int]) -> tuple[str, ...]:
+    raw = _optional_cell_from_row(row, header_map, _TAGS_HEADER_KEYS)
+    if not raw:
+        return ()
+    tags: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(";"):
+        tag = part.strip()
+        if tag and tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+    return tuple(tags)
+
+
 def _row_to_record(
     row: list[str],
     header_map: Mapping[str, int],
     *,
     line_no: int,
     path: Path,
-) -> tuple[str, str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str, tuple[str | None, str | None, str | None, str | None, tuple[str, ...]]]:
     def cell(name: str) -> str:
         idx = header_map[name]
         if idx >= len(row):
@@ -353,4 +404,11 @@ def _row_to_record(
         raise ConfigError(
             f"repo mapping CSV {path} line {line_no}: Area Path is required",
         )
-    return source, scope, repo, ado_org, area_path, assignee
+    taxonomy = (
+        _optional_cell_from_row(row, header_map, _WIT_TYPE_HEADER_KEYS),
+        _optional_cell_from_row(row, header_map, _ACTIVE_STATE_HEADER_KEYS),
+        _optional_cell_from_row(row, header_map, _CLOSED_STATE_HEADER_KEYS),
+        _optional_cell_from_row(row, header_map, _DESC_FIELD_HEADER_KEYS),
+        _tags_from_row(row, header_map),
+    )
+    return source, scope, repo, ado_org, area_path, assignee, taxonomy

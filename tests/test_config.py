@@ -748,3 +748,46 @@ def test_load_app_config_sets_config_file_dir(tmp_path: Path) -> None:
     c = load_app_config(config_path=str(p), cli_group_id=None)
     assert c.config_file_dir == str(p.parent.resolve())
 
+
+def test_load_app_config_ado_targets(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  ado_targets:\n"
+        "    - organization: myado\n"
+        "      project: PaymentsProject\n"
+        "      work_item_type: Bug\n"
+        "      work_item_state_active: New\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert len(c.azure_boards.ado_targets) == 1
+    profile = c.azure_boards.ado_targets[0]
+    assert profile.organization == "myado"
+    assert profile.project == "PaymentsProject"
+    assert profile.work_item_type == "Bug"
+    looked = c.azure_boards.ado_target_index.lookup("myado", "PaymentsProject")
+    assert looked is not None
+    assert looked.work_item_state_active == "New"
+
+
+def test_load_app_config_ado_targets_duplicate_rejected(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  ado_targets:\n"
+        "    - organization: myado\n"
+        "      project: Same\n"
+        "    - organization: myado\n"
+        "      project: Same\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="duplicate"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_load_app_config_omitted_ado_targets(tmp_path: Path) -> None:
+    c = load_app_config(config_path=None, cli_group_id=None)
+    assert c.azure_boards.ado_targets == []
+    assert c.azure_boards.ado_target_index.lookup("any", "proj") is None
+

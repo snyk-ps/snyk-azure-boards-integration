@@ -9,6 +9,14 @@ azure_boards:
   # See data/sample-repo-mapping.csv and CONFIGURATION.md. Co-locate on Azure Files with config.yaml.
   # repo_mapping_csv: repo-mapping.csv
   # repo_mapping_csv: ""
+  # Per-ADO-project work item taxonomy when repo-mapping.csv routes to multiple projects.
+  # Define one entry per distinct (organization, project) from CSV Area Path first segments.
+  # ado_targets:
+  #   - organization: "your-azure-devops-org"
+  #     project: "PaymentsProject"
+  #     work_item_type: Bug
+  #     work_item_state_active: New
+  #     work_item_state_closed: Closed
   defaults:
     # Routing for group-scoped sync (when org_mappings is absent): ADO org/project names.
     organization: "your-azure-devops-org"

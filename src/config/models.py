@@ -47,6 +47,45 @@ class OrgMapping:
     overrides: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class AdoTargetProfile:
+    """Work-item taxonomy profile for one Azure DevOps ``(organization, project)``."""
+
+    organization: str
+    project: str
+    work_item_type: str | None = None
+    work_item_state_active: str | None = None
+    work_item_state_closed: str | None = None
+    work_item_description_field: str | None = None
+    work_item_template: dict[str, Any] = field(default_factory=dict)
+
+
+class AdoTargetIndex:
+    """Lookup ``ado_targets`` profiles by ``(organization, project)``."""
+
+    def __init__(self, profiles: dict[tuple[str, str], AdoTargetProfile]) -> None:
+        self._profiles = dict(profiles)
+
+    @classmethod
+    def empty(cls) -> AdoTargetIndex:
+        """Return an index with no profiles."""
+        return cls({})
+
+    @classmethod
+    def from_profiles(cls, profiles: list[AdoTargetProfile]) -> AdoTargetIndex:
+        """Build an index from parsed ``ado_targets`` list entries."""
+        out: dict[tuple[str, str], AdoTargetProfile] = {}
+        for profile in profiles:
+            key = (profile.organization.strip(), profile.project.strip())
+            out[key] = profile
+        return cls(out)
+
+    def lookup(self, organization: str, project: str) -> AdoTargetProfile | None:
+        """Return the profile for ``(organization, project)`` when configured."""
+        key = (str(organization or "").strip(), str(project or "").strip())
+        return self._profiles.get(key)
+
+
 @dataclass
 class AzureBoardsConfig:
     """Azure Boards-related settings (merged ``defaults`` for single-target or per-row)."""
@@ -66,6 +105,8 @@ class AzureBoardsConfig:
     sync_included_snyk_origins: tuple[str, ...] | None = None
     #: Path to ``repo-mapping.csv`` (relative to config dir or absolute); see loader.
     repo_mapping_csv: str | None = None
+    ado_targets: list[AdoTargetProfile] = field(default_factory=list)
+    ado_target_index: AdoTargetIndex = field(default_factory=AdoTargetIndex.empty)
 
 
 @dataclass

@@ -1,4 +1,4 @@
-"""Load and resolve ``repo-mapping.csv`` for area path and assignee routing."""
+"""Load and resolve ``repo-mapping.csv`` for ADO target, area path, and assignee routing."""
 
 from __future__ import annotations
 
@@ -27,10 +27,11 @@ _REQUIRED_HEADERS: tuple[str, ...] = (
     "source",
     "github org/ado project",
     "repo name",
+    "ado organization",
     "area path",
 )
 
-_OPTIONAL_HEADERS: frozenset[str] = frozenset({"assignee"})
+_ASSIGNEE_HEADER_KEYS: tuple[str, ...] = ("assignee (optional)", "assignee")
 
 
 def snyk_origin_to_csv_source(origin: str) -> str | None:
@@ -81,20 +82,48 @@ def parse_owner_repo(project_name: str) -> tuple[str, str]:
     return owner.strip(), _normalize_repo_segment(repo)
 
 
+def parse_area_path_for_project(path: str) -> tuple[str, str]:
+    """
+    Parse a full ADO area path into ``(ado_project, full_path)``.
+
+    Requires at least two ``\\``-delimited segments (``Project\\Area``).
+    """
+    full_path = str(path or "").strip()
+    if "\\" not in full_path:
+        raise ConfigError(
+            "Area Path must contain at least Project\\Area (two segments); "
+            f"got {full_path!r}",
+        )
+    project, _, remainder = full_path.partition("\\")
+    project = project.strip()
+    remainder = remainder.strip()
+    if not project or not remainder:
+        raise ConfigError(
+            "Area Path must contain at least Project\\Area (two segments); "
+            f"got {full_path!r}",
+        )
+    return project, full_path
+
+
 @dataclass(frozen=True)
 class RepoMappingMatch:
     """One matching CSV row."""
 
+    organization: str
+    project: str
     area_path: str
     assignee: str
 
 
 @dataclass(frozen=True)
 class ResolvedRouting:
-    """Effective area path and assignee for one issue."""
+    """Effective ADO target, area path, and assignee for one issue."""
 
+    organization: str
+    project: str
     area_path: str | None
     assignee: str | None
+    ado_target_source: str
     area_path_source: str
     assignee_from_csv: bool
 
@@ -146,7 +175,21 @@ class RepoMappingIndex:
                 raise ConfigError(
                     f"Duplicate repo mapping key {key!r} in {path} (line {line_no})",
                 )
-            rows[key] = RepoMappingMatch(area_path=record[3], assignee=record[4])
+            ado_org = record[3]
+            area_path = record[4]
+            assignee = record[5]
+            try:
+                ado_project, _full = parse_area_path_for_project(area_path)
+            except ConfigError as exc:
+                raise ConfigError(
+                    f"repo mapping CSV {path} line {line_no}: {exc}",
+                ) from exc
+            rows[key] = RepoMappingMatch(
+                organization=ado_org,
+                project=ado_project,
+                area_path=area_path,
+                assignee=assignee,
+            )
         return cls(rows)
 
 
@@ -193,11 +236,14 @@ def resolve_routing(
     global_defaults_area_path: str | None = None,
 ) -> ResolvedRouting:
     """
-    Resolve effective area path and assignee for one issue.
+    Resolve effective ADO target, area path, and assignee for one issue.
 
+    ADO org/project precedence: CSV row → merged config ``organization`` / ``project``.
     Area path precedence: CSV row → merged ``defaults.area_path`` → unset.
-    Assignee: non-empty CSV **Assignee** when row matches; else template rules.
+    Assignee: non-empty CSV assignee when row matches; else template rules.
     """
+    config_org = boards.organization.strip() or boards.defaults.organization.strip()
+    config_project = boards.project.strip() or boards.defaults.project.strip()
     csv_source = snyk_origin_to_csv_source(snyk_project_origin)
     owner, repo = parse_owner_repo(snyk_project_name)
     csv_match: RepoMappingMatch | None = None
@@ -205,11 +251,13 @@ def resolve_routing(
         csv_match = index.lookup(csv_source, owner, repo)
 
     if csv_match is not None:
-        area_path = csv_match.area_path
         assignee = csv_match.assignee.strip() or None
         return ResolvedRouting(
-            area_path=area_path,
+            organization=csv_match.organization,
+            project=csv_match.project,
+            area_path=csv_match.area_path,
             assignee=assignee,
+            ado_target_source="csv",
             area_path_source="csv",
             assignee_from_csv=bool(assignee),
         )
@@ -221,15 +269,21 @@ def resolve_routing(
         else:
             area_source = "defaults"
         return ResolvedRouting(
+            organization=config_org,
+            project=config_project,
             area_path=yaml_path,
             assignee=None,
+            ado_target_source="config",
             area_path_source=area_source,
             assignee_from_csv=False,
         )
 
     return ResolvedRouting(
+        organization=config_org,
+        project=config_project,
         area_path=None,
         assignee=None,
+        ado_target_source="config",
         area_path_source="none",
         assignee_from_csv=False,
     )
@@ -253,13 +307,22 @@ def _validate_required_headers(header_map: Mapping[str, int], *, path: Path) -> 
         )
 
 
+def _assignee_from_row(row: list[str], header_map: Mapping[str, int]) -> str:
+    for key in _ASSIGNEE_HEADER_KEYS:
+        if key in header_map:
+            idx = header_map[key]
+            if idx < len(row):
+                return str(row[idx] or "").strip()
+    return ""
+
+
 def _row_to_record(
     row: list[str],
     header_map: Mapping[str, int],
     *,
     line_no: int,
     path: Path,
-) -> tuple[str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str]:
     def cell(name: str) -> str:
         idx = header_map[name]
         if idx >= len(row):
@@ -269,8 +332,9 @@ def _row_to_record(
     source = cell("source")
     scope = cell("github org/ado project")
     repo = cell("repo name")
+    ado_org = cell("ado organization")
     area_path = cell("area path")
-    assignee = cell("assignee") if "assignee" in header_map else ""
+    assignee = _assignee_from_row(row, header_map)
 
     if source not in _ALLOWED_CSV_SOURCES:
         raise ConfigError(
@@ -281,8 +345,12 @@ def _row_to_record(
         raise ConfigError(
             f"repo mapping CSV {path} line {line_no}: Repo Name is required",
         )
+    if not ado_org:
+        raise ConfigError(
+            f"repo mapping CSV {path} line {line_no}: ADO Organization is required",
+        )
     if not area_path:
         raise ConfigError(
             f"repo mapping CSV {path} line {line_no}: Area Path is required",
         )
-    return source, scope, repo, area_path, assignee
+    return source, scope, repo, ado_org, area_path, assignee

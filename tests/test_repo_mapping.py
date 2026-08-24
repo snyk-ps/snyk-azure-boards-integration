@@ -10,7 +10,9 @@ from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig, AzureBoardsDefaults, SnykConfig
 from sync.repo_mapping import (
     RepoMappingIndex,
+    RepoMappingMatch,
     load_repo_mapping_index,
+    parse_area_path_for_project,
     parse_owner_repo,
     resolve_repo_mapping_csv_path,
     resolve_routing,
@@ -18,9 +20,15 @@ from sync.repo_mapping import (
 )
 
 _MINIMAL_CSV = (
-    "Source,GitHub Org/ADO Project,Repo Name,Area Path,Assignee\n"
-    "github,my-org,payments-api,MyProject\\Payments,user@example.com\n"
-    "azure-repos,MyAdoProject,frontend,MyProject\\Frontend,\n"
+    "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path,"
+    "Assignee (Optional)\n"
+    "github,my-org,payments-api,ado-o,MyProject\\Payments,user@example.com\n"
+    "azure-repos,MyAdoProject,frontend,ado-o,OtherProject\\Frontend,\n"
+)
+
+_LEGACY_ASSIGNEE_CSV = (
+    "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path,Assignee\n"
+    "github,my-org,payments-api,ado-o,MyProject\\Payments,user@example.com\n"
 )
 
 
@@ -58,18 +66,28 @@ def test_parse_owner_repo_strips_branch_and_manifest_suffix() -> None:
     )
 
 
-def test_resolve_routing_matches_csv_with_branch_manifest_display_name() -> None:
-    from sync.repo_mapping import RepoMappingMatch
+def test_parse_area_path_for_project_requires_two_segments() -> None:
+    project, full = parse_area_path_for_project(r"MyProject\Payments")
+    assert project == "MyProject"
+    assert full == r"MyProject\Payments"
+    with pytest.raises(ConfigError, match="two segments"):
+        parse_area_path_for_project("TeamOnly")
 
+
+def test_resolve_routing_matches_csv_with_branch_manifest_display_name() -> None:
     index = RepoMappingIndex(
         {
             ("azure-repos", "testProjectBug", "nodejs-goof.git"): RepoMappingMatch(
+                organization="ado-o",
+                project="testProjectBug",
                 area_path="testProjectBug\\test-area",
                 assignee="user@example.com",
             ),
         },
     )
-    boards = AzureBoardsConfig(defaults=AzureBoardsDefaults())
+    boards = AzureBoardsConfig(
+        defaults=AzureBoardsDefaults(organization="cfg-o", project="cfg-p"),
+    )
     routing = resolve_routing(
         index=index,
         snyk_project_origin="azure-repos",
@@ -77,7 +95,10 @@ def test_resolve_routing_matches_csv_with_branch_manifest_display_name() -> None
         boards=boards,
         global_defaults_area_path=None,
     )
+    assert routing.organization == "ado-o"
+    assert routing.project == "testProjectBug"
     assert routing.area_path == "testProjectBug\\test-area"
+    assert routing.ado_target_source == "csv"
     assert routing.area_path_source == "csv"
     assert routing.assignee == "user@example.com"
 
@@ -88,15 +109,59 @@ def test_repo_mapping_index_load_and_lookup(tmp_path: Path) -> None:
     index = RepoMappingIndex.load_from_path(p)
     match = index.lookup("github", "my-org", "payments-api")
     assert match is not None
+    assert match.organization == "ado-o"
+    assert match.project == "MyProject"
     assert match.area_path == "MyProject\\Payments"
     assert match.assignee == "user@example.com"
+
+
+def test_repo_mapping_index_accepts_legacy_assignee_header(tmp_path: Path) -> None:
+    p = tmp_path / "repo-mapping.csv"
+    p.write_text(_LEGACY_ASSIGNEE_CSV, encoding="utf-8")
+    index = RepoMappingIndex.load_from_path(p)
+    match = index.lookup("github", "my-org", "payments-api")
+    assert match is not None
+    assert match.assignee == "user@example.com"
+
+
+def test_repo_mapping_index_rejects_missing_ado_organization_header(tmp_path: Path) -> None:
+    p = tmp_path / "repo-mapping.csv"
+    p.write_text(
+        "Source,GitHub Org/ADO Project,Repo Name,Area Path\n"
+        "github,my-org,repo,ado-o,MyProject\\Area\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="ado organization"):
+        RepoMappingIndex.load_from_path(p)
+
+
+def test_repo_mapping_index_rejects_empty_ado_organization(tmp_path: Path) -> None:
+    p = tmp_path / "repo-mapping.csv"
+    p.write_text(
+        "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path\n"
+        "github,my-org,repo,,MyProject\\Area\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="ADO Organization"):
+        RepoMappingIndex.load_from_path(p)
+
+
+def test_repo_mapping_index_rejects_single_segment_area_path(tmp_path: Path) -> None:
+    p = tmp_path / "repo-mapping.csv"
+    p.write_text(
+        "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path\n"
+        "github,my-org,repo,ado-o,TeamOnly\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="two segments"):
+        RepoMappingIndex.load_from_path(p)
 
 
 def test_repo_mapping_index_rejects_invalid_source(tmp_path: Path) -> None:
     p = tmp_path / "repo-mapping.csv"
     p.write_text(
-        "Source,GitHub Org/ADO Project,Repo Name,Area Path\n"
-        "gitlab,my-org,repo,Area\n",
+        "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path\n"
+        "gitlab,my-org,repo,ado-o,MyProject\\Area\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="github.*azure-repos"):
@@ -106,9 +171,9 @@ def test_repo_mapping_index_rejects_invalid_source(tmp_path: Path) -> None:
 def test_repo_mapping_index_rejects_duplicate_keys(tmp_path: Path) -> None:
     p = tmp_path / "repo-mapping.csv"
     p.write_text(
-        "Source,GitHub Org/ADO Project,Repo Name,Area Path\n"
-        "github,my-org,repo,Area1\n"
-        "github,my-org,repo,Area2\n",
+        "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path\n"
+        "github,my-org,repo,ado-o,MyProject\\Area1\n"
+        "github,my-org,repo,ado-o,MyProject\\Area2\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="Duplicate"):
@@ -147,18 +212,22 @@ def test_load_repo_mapping_index_missing_file_raises() -> None:
 
 
 def test_resolve_routing_csv_beats_defaults() -> None:
-    from sync.repo_mapping import RepoMappingMatch
-
     index = RepoMappingIndex(
         {
             ("github", "my-org", "payments-api"): RepoMappingMatch(
+                organization="csv-o",
+                project="CsvProject",
                 area_path="CSV\\Path",
                 assignee="csv@example.com",
             ),
         },
     )
     boards = AzureBoardsConfig(
-        defaults=AzureBoardsDefaults(area_path="Default\\Path"),
+        defaults=AzureBoardsDefaults(
+            organization="cfg-o",
+            project="cfg-p",
+            area_path="Default\\Path",
+        ),
     )
     routing = resolve_routing(
         index=index,
@@ -167,7 +236,10 @@ def test_resolve_routing_csv_beats_defaults() -> None:
         boards=boards,
         global_defaults_area_path="Default\\Path",
     )
+    assert routing.organization == "csv-o"
+    assert routing.project == "CsvProject"
     assert routing.area_path == "CSV\\Path"
+    assert routing.ado_target_source == "csv"
     assert routing.area_path_source == "csv"
     assert routing.assignee == "csv@example.com"
     assert routing.assignee_from_csv is True
@@ -176,7 +248,11 @@ def test_resolve_routing_csv_beats_defaults() -> None:
 def test_resolve_routing_org_override_beats_global_default() -> None:
     index = RepoMappingIndex.empty()
     boards = AzureBoardsConfig(
-        defaults=AzureBoardsDefaults(area_path="Org\\Path"),
+        defaults=AzureBoardsDefaults(
+            organization="cfg-o",
+            project="cfg-p",
+            area_path="Org\\Path",
+        ),
     )
     routing = resolve_routing(
         index=index,
@@ -185,13 +261,18 @@ def test_resolve_routing_org_override_beats_global_default() -> None:
         boards=boards,
         global_defaults_area_path="Global\\Path",
     )
+    assert routing.organization == "cfg-o"
+    assert routing.project == "cfg-p"
+    assert routing.ado_target_source == "config"
     assert routing.area_path == "Org\\Path"
     assert routing.area_path_source == "org_override"
 
 
 def test_resolve_routing_none_when_unset() -> None:
     index = RepoMappingIndex.empty()
-    boards = AzureBoardsConfig(defaults=AzureBoardsDefaults())
+    boards = AzureBoardsConfig(
+        defaults=AzureBoardsDefaults(organization="cfg-o", project="cfg-p"),
+    )
     routing = resolve_routing(
         index=index,
         snyk_project_origin="cli",
@@ -199,5 +280,7 @@ def test_resolve_routing_none_when_unset() -> None:
         boards=boards,
         global_defaults_area_path=None,
     )
+    assert routing.organization == "cfg-o"
+    assert routing.project == "cfg-p"
     assert routing.area_path is None
     assert routing.area_path_source == "none"

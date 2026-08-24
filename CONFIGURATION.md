@@ -61,14 +61,25 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | Column | Required | Notes |
 | ------ | -------- | ----- |
 | **Source** | yes | **`github`** or **`azure-repos`** only. **`github`** matches all GitHub-family Snyk origins (`github`, `github-cloud-app`, `github-enterprise`, `github-server-app`). |
-| **GitHub Org/ADO Project** | yes* | Matches the **owner** segment of Snyk project name **`Owner/Repo`** (GitHub org or ADO project). May be empty only for repo-only keys (unusual). |
+| **GitHub Org/ADO Project** | yes* | **Snyk-side match key:** the **owner** segment of Snyk project name **`Owner/Repo`** (GitHub org or ADO project). This is **not** the ADO routing destination. May be empty only for repo-only keys (unusual). |
 | **Repo Name** | yes | Matches the **repo** segment of **`Owner/Repo`**. |
-| **Area Path** | yes | Full Azure DevOps area path (for example `MyProject\\Payments`). |
-| **Assignee** | no | When present on a matching row, **always overrides** YAML/template assignee on create **and** update. |
+| **ADO Organization** | yes | Azure DevOps **organization** for work items when this row matches. Required on every data row (non-empty). |
+| **Area Path** | yes | Full Azure DevOps area path in **`Project\\Area`** form (at least two segments). The first segment is the ADO **project** used for REST routing; the full value is written to **`System.AreaPath`**. |
+| **Assignee (Optional)** | no | When present on a matching row, **always overrides** YAML/template assignee on create **and** update. Legacy header **`Assignee`** is also accepted. |
 
 **Matching:** Snyk project names are typically **`Owner/Repo`**, but issue payloads may append a branch and manifest suffix (for example **`Owner/Repo(main):package.json`**). **`sync`** splits on the first **`/`**, strips any **`(branch):manifest`** suffix from the repo segment, and matches together with grouped origin → **Source**.
 
+**Precedence (ADO target):** When a CSV row matches, **ADO Organization** and the **first Area Path segment** (project) override the YAML **`org_mappings`** / **`defaults`** target for that issue only. When no row matches, YAML **`organization`** / **`project`** apply unchanged.
+
+**Multi-project within one Snyk org:** Keep a single **`org_mappings`** row (1:1 Snyk org baseline) and use **`repo-mapping.csv`** to route different repositories to different ADO projects. Do **not** duplicate **`snyk_org_id`** rows in YAML.
+
 **Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → omit (ADO project default).
+
+**PAT scope:** **`AZURE_DEVOPS_PAT`** must authorize every **ADO Organization** and **project** (first **Area Path** segment) listed in the CSV.
+
+**CSV migration (breaking):** Add **ADO Organization** (non-empty per row) and use full **`Project\\Area`** values in **Area Path** (not area-only paths relative to the config project).
+
+**Routing migration:** When CSV ADO target changes for an already-mapped issue, **`sync`** recreates **open** findings in the new target (with an audit comment on the new work item) or retargets the mapping store for **resolved** / **ignored** findings (with an audit comment on the existing work item when reachable).
 
 **Updates:** When the resolved area path differs from the work item’s current **`System.AreaPath`**, **`sync`** patches the new path and adds an audit comment noting the previous and new location.
 

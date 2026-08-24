@@ -108,6 +108,42 @@ def _format_area_path_move_comment(*, previous: str, new: str) -> str:
     return f"Snyk sync moved work item area path from '{prev_display}' to '{new}'."
 
 
+def _format_routing_migration_recreate_comment(
+    *,
+    prior_work_item_id: str,
+    old_org: str,
+    old_proj: str,
+    new_org: str,
+    new_proj: str,
+) -> str:
+    return (
+        "Snyk sync recreated this work item due to repo-mapping ADO target change. "
+        f"Previous work item {prior_work_item_id.strip()} was in "
+        f"{old_org.strip()}/{old_proj.strip()}; "
+        f"new target is {new_org.strip()}/{new_proj.strip()}."
+    )
+
+
+def _format_routing_migration_retarget_comment(
+    *,
+    old_org: str,
+    old_proj: str,
+    new_org: str,
+    new_proj: str,
+) -> str:
+    return (
+        "Snyk sync updated mapping target due to repo-mapping change. "
+        f"Future syncs for this issue will use {new_org.strip()}/{new_proj.strip()}. "
+        f"This work item remains in {old_org.strip()}/{old_proj.strip()}."
+    )
+
+
+def _routing_target_changed(row: MappingRow, routing: ResolvedRouting) -> bool:
+    stored_org = str(row.organization or "").strip()
+    stored_proj = str(row.project or "").strip()
+    return stored_org != routing.organization.strip() or stored_proj != routing.project.strip()
+
+
 def _work_item_area_path(wi: Mapping[str, Any] | None) -> str:
     if wi is None:
         return ""
@@ -124,8 +160,12 @@ def _log_issue_routing(
     routing: ResolvedRouting,
 ) -> None:
     log.info(
-        "sync routing issue=%s area_path_source=%s assignee_from_csv=%s",
+        "sync routing issue=%s ado_target_source=%s organization=%s project=%s "
+        "area_path_source=%s assignee_from_csv=%s",
         issue_key,
+        routing.ado_target_source,
+        routing.organization,
+        routing.project,
         routing.area_path_source,
         routing.assignee_from_csv,
     )
@@ -156,6 +196,7 @@ def _create_replacement_work_item(
     snyk_po: str,
     prev_snyk: str | None,
     audit_prior_work_item: bool,
+    audit_comment: str | None,
     routing: ResolvedRouting,
     log: logging.Logger,
 ) -> str:
@@ -200,7 +241,9 @@ def _create_replacement_work_item(
         excluded=False,
         exclusion_reason="",
     )
-    if audit_prior_work_item and prior_work_item_id.strip():
+    if audit_comment:
+        wit_client.add_work_item_comment(ado_org, ado_proj, new_wid, audit_comment)
+    elif audit_prior_work_item and prior_work_item_id.strip():
         prior_url = _ado_work_item_edit_url(
             organization=ado_org,
             project=ado_proj,
@@ -307,6 +350,7 @@ def _run_sync_body(
                 boards.work_item_type,
                 boards.defaults.work_item_description_field,
             )
+            _ = description_field  # warmed; per-issue resolve uses description_fields
             levels = effective_severity_levels_from_threshold(boards.severity_threshold)
             list_params = GroupIssueListParams(effective_severity_levels=levels)
             template = effective_work_item_template(config, m.overrides, boards=boards)
@@ -334,7 +378,7 @@ def _run_sync_body(
                 ado_proj=boards.project.strip(),
                 boards=boards,
                 template=template,
-                description_field=description_field,
+                description_fields=description_fields,
                 wit_client=wit_client,
                 store=store,
                 log=log,
@@ -359,6 +403,7 @@ def _run_sync_body(
         boards_flat.work_item_type,
         boards_flat.defaults.work_item_description_field,
     )
+    _ = description_field  # warmed; per-issue resolve uses description_fields
     levels = effective_severity_levels_from_threshold(boards_flat.severity_threshold)
     list_params = GroupIssueListParams(effective_severity_levels=levels)
     template = effective_work_item_template(config, None, boards=boards_flat)
@@ -380,7 +425,7 @@ def _run_sync_body(
         ado_proj=boards_flat.project.strip(),
         boards=boards_flat,
         template=template,
-        description_field=description_field,
+        description_fields=description_fields,
         wit_client=wit_client,
         store=store,
         log=log,
@@ -405,7 +450,7 @@ def _run_sync_batch(
     ado_proj: str,
     boards: AzureBoardsConfig,
     template: dict[str, Any],
-    description_field: str,
+    description_fields: DescriptionFieldResolver,
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
@@ -418,7 +463,6 @@ def _run_sync_batch(
     repo_index: RepoMappingIndex,
     global_defaults_area_path: str | None,
 ) -> None:
-    wids: list[str] = []
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
     for rec in issues:
         if not isinstance(rec, dict):
@@ -433,11 +477,21 @@ def _run_sync_batch(
             project_id=nk[2],
             issue_id=nk[3],
         )
-        if row and str(row.work_item_id).strip():
-            wids.append(str(row.work_item_id).strip())
         planned.append((rec, nk, row))
 
-    cache = batch_get_work_items(wit_client, ado_org, ado_proj, wids)
+    partitions: dict[tuple[str, str], list[str]] = {}
+    for _rec, _nk, row in planned:
+        if row is None or not str(row.work_item_id).strip():
+            continue
+        stored_org = str(row.organization or "").strip() or ado_org
+        stored_proj = str(row.project or "").strip() or ado_proj
+        partitions.setdefault((stored_org, stored_proj), []).append(
+            str(row.work_item_id).strip(),
+        )
+
+    cache: dict[str, dict] = {}
+    for (part_org, part_proj), wids in partitions.items():
+        cache.update(batch_get_work_items(wit_client, part_org, part_proj, wids))
 
     for rec, nk, row in planned:
         _gid, _oid, pid, iid = nk
@@ -448,11 +502,11 @@ def _run_sync_batch(
                 row=row,
                 cache=cache,
                 group_id=_gid,
-                ado_org=ado_org,
-                ado_proj=ado_proj,
+                config_ado_org=ado_org,
+                config_ado_proj=ado_proj,
                 boards=boards,
                 template=template,
-                description_field=description_field,
+                description_fields=description_fields,
                 wit_client=wit_client,
                 store=store,
                 log=log,
@@ -476,11 +530,11 @@ def _sync_one_issue(
     row: MappingRow | None,
     cache: dict[str, dict],
     group_id: str,
-    ado_org: str,
-    ado_proj: str,
+    config_ado_org: str,
+    config_ado_proj: str,
     boards: AzureBoardsConfig,
     template: dict[str, Any],
-    description_field: str,
+    description_fields: DescriptionFieldResolver,
     wit_client: WorkItemsClient,
     store: MappingStore,
     log: logging.Logger,
@@ -564,8 +618,8 @@ def _sync_one_issue(
             project_id=pid,
             issue_id=iid,
             snyk_status=new_status,
-            organization=ado_org,
-            project=ado_proj,
+            organization=config_ado_org,
+            project=config_ado_proj,
             work_item_id=wid_keep,
             work_item_status=wst_keep,
             snyk_project_name=snyk_pn,
@@ -575,10 +629,26 @@ def _sync_one_issue(
         )
         return
 
+    routing = resolve_routing(
+        index=repo_index,
+        snyk_project_origin=snyk_po,
+        snyk_project_name=snyk_pn,
+        boards=boards,
+        global_defaults_area_path=global_defaults_area_path,
+    )
+    effective_org = routing.organization
+    effective_proj = routing.project
+    description_field = description_fields.resolve(
+        effective_org,
+        effective_proj,
+        ab.work_item_type,
+        ab.defaults.work_item_description_field,
+    )
+
     target_label = effective_target_label_for_title(
         snyk_project_name=snyk_pn,
-        ado_organization=ado_org,
-        ado_project=ado_proj,
+        ado_organization=effective_org,
+        ado_project=effective_proj,
     )
     title = work_item_title(attrs, target_name=target_label)
     description = build_system_description(
@@ -593,16 +663,112 @@ def _sync_one_issue(
         app_base_url=app_base_url,
     )
 
-    routing = resolve_routing(
-        index=repo_index,
-        snyk_project_origin=snyk_po,
-        snyk_project_name=snyk_pn,
-        boards=boards,
-        global_defaults_area_path=global_defaults_area_path,
-    )
-
     prev_snyk = row.snyk_status if row is not None else None
     prev_wid = str(row.work_item_id) if row is not None else ""
+    stored_org = str(row.organization if row else "").strip() or config_ado_org
+    stored_proj = str(row.project if row else "").strip() or config_ado_proj
+
+    if (
+        row is not None
+        and prev_wid.strip()
+        and _routing_target_changed(row, routing)
+    ):
+        if new_status == DERIVED_OPEN:
+            if not ab.create_new_work_items:
+                log.warning(
+                    "sync skip routing migration recreate (create_new_work_items false) "
+                    "issue=%s",
+                    issue_key,
+                )
+                return
+            if ab.create_only_when_fix_available and not attrs_indicate_fix_available(
+                attrs,
+            ):
+                log.debug(
+                    "sync skip routing migration recreate (no fix available) issue=%s",
+                    issue_key,
+                )
+                return
+            migration_comment = _format_routing_migration_recreate_comment(
+                prior_work_item_id=prev_wid,
+                old_org=stored_org,
+                old_proj=stored_proj,
+                new_org=effective_org,
+                new_proj=effective_proj,
+            )
+            _create_replacement_work_item(
+                gid=gid,
+                oid=oid,
+                pid=pid,
+                iid=iid,
+                ado_org=effective_org,
+                ado_proj=effective_proj,
+                ab=ab,
+                template=template,
+                description_field=description_field,
+                wit_client=wit_client,
+                store=store,
+                title=title,
+                description=description,
+                severity_level_for_tags=severity_level_for_tags,
+                issue_snyk_type=issue_snyk_type,
+                app_base_url=app_base_url,
+                new_status=new_status,
+                issue_key=issue_key,
+                prior_work_item_id=prev_wid,
+                snyk_pn=snyk_pn,
+                snyk_po=snyk_po,
+                prev_snyk=prev_snyk,
+                audit_prior_work_item=False,
+                audit_comment=migration_comment,
+                routing=routing,
+                log=log,
+            )
+            return
+
+        if new_status in (DERIVED_RESOLVED, DERIVED_IGNORED):
+            try:
+                wit_client.get_work_item(stored_org, stored_proj, prev_wid.strip())
+            except AzureDevOpsClientError as exc:
+                if getattr(exc, "status_code", None) != 404:
+                    raise
+                log.info(
+                    "routing migration retarget: work item %s missing in %s/%s issue=%s",
+                    prev_wid,
+                    stored_org,
+                    stored_proj,
+                    issue_key,
+                )
+            else:
+                retarget_comment = _format_routing_migration_retarget_comment(
+                    old_org=stored_org,
+                    old_proj=stored_proj,
+                    new_org=effective_org,
+                    new_proj=effective_proj,
+                )
+                wit_client.add_work_item_comment(
+                    stored_org,
+                    stored_proj,
+                    prev_wid.strip(),
+                    retarget_comment,
+                )
+            store.upsert(
+                group_id=gid,
+                org_id=oid,
+                project_id=pid,
+                issue_id=iid,
+                snyk_status=new_status,
+                organization=effective_org,
+                project=effective_proj,
+                work_item_id=prev_wid.strip(),
+                work_item_status=str(row.work_item_status or ""),
+                snyk_project_name=snyk_pn,
+                snyk_project_origin=snyk_po,
+                excluded=False,
+                exclusion_reason="",
+            )
+            return
+
     # Rows persisted while origin-excluded often have no work_item_id; if the issue
     # becomes origin-included (allowlist widens / origin resolves), treat like unmapped.
     unmapped_for_ado = row is None or not prev_wid.strip()
@@ -639,8 +805,8 @@ def _sync_one_issue(
             assigned_to=routing.assignee,
         )
         created = wit_client.create_work_item(
-            ado_org,
-            ado_proj,
+            effective_org,
+            effective_proj,
             ab.work_item_type,
             patches,
         )
@@ -652,8 +818,8 @@ def _sync_one_issue(
             project_id=pid,
             issue_id=iid,
             snyk_status=new_status,
-            organization=ado_org,
-            project=ado_proj,
+            organization=effective_org,
+            project=effective_proj,
             work_item_id=wid,
             work_item_status=wst,
             snyk_project_name=snyk_pn,
@@ -677,7 +843,11 @@ def _sync_one_issue(
             and prev_wid.strip()
         ):
             try:
-                existing = wit_client.get_work_item(ado_org, ado_proj, prev_wid.strip())
+                existing = wit_client.get_work_item(
+                    stored_org,
+                    stored_proj,
+                    prev_wid.strip(),
+                )
             except AzureDevOpsClientError as exc:
                 if getattr(exc, "status_code", None) != 404:
                     raise
@@ -714,8 +884,8 @@ def _sync_one_issue(
                     assigned_to=routing.assignee,
                 )
                 updated = wit_client.update_work_item(
-                    ado_org,
-                    ado_proj,
+                    stored_org,
+                    stored_proj,
                     prev_wid.strip(),
                     patches,
                 )
@@ -726,8 +896,8 @@ def _sync_one_issue(
                     project_id=pid,
                     issue_id=iid,
                     snyk_status=new_status,
-                    organization=ado_org,
-                    project=ado_proj,
+                    organization=effective_org,
+                    project=effective_proj,
                     work_item_id=prev_wid.strip(),
                     work_item_status=wst,
                     snyk_project_name=snyk_pn,
@@ -737,8 +907,8 @@ def _sync_one_issue(
                 )
                 if patch_area and effective_area:
                     wit_client.add_work_item_comment(
-                        ado_org,
-                        ado_proj,
+                        stored_org,
+                        stored_proj,
                         prev_wid.strip(),
                         _format_area_path_move_comment(
                             previous=current_area,
@@ -753,8 +923,8 @@ def _sync_one_issue(
                         prior_work_item_id=None,
                     )
                     wit_client.add_work_item_comment(
-                        ado_org,
-                        ado_proj,
+                        stored_org,
+                        stored_proj,
                         prev_wid.strip(),
                         text,
                     )
@@ -769,8 +939,8 @@ def _sync_one_issue(
             oid=oid,
             pid=pid,
             iid=iid,
-            ado_org=ado_org,
-            ado_proj=ado_proj,
+            ado_org=effective_org,
+            ado_proj=effective_proj,
             ab=ab,
             template=template,
             description_field=description_field,
@@ -788,6 +958,7 @@ def _sync_one_issue(
             snyk_po=snyk_po,
             prev_snyk=prev_snyk,
             audit_prior_work_item=prev_snyk is not None and prev_snyk != new_status,
+            audit_comment=None,
             routing=routing,
             log=log,
         )
@@ -851,8 +1022,8 @@ def _sync_one_issue(
             oid=oid,
             pid=pid,
             iid=iid,
-            ado_org=ado_org,
-            ado_proj=ado_proj,
+            ado_org=effective_org,
+            ado_proj=effective_proj,
             ab=ab,
             template=template,
             description_field=description_field,
@@ -870,6 +1041,7 @@ def _sync_one_issue(
             snyk_po=snyk_po,
             prev_snyk=prev_snyk,
             audit_prior_work_item=True,
+            audit_comment=None,
             routing=routing,
             log=log,
         )
@@ -897,7 +1069,7 @@ def _sync_one_issue(
         patch_area_path=patch_area,
         assigned_to=routing.assignee,
     )
-    updated = wit_client.update_work_item(ado_org, ado_proj, wid, patches)
+    updated = wit_client.update_work_item(stored_org, stored_proj, wid, patches)
     wst = str(updated.get("work_item_status") or "")
 
     store.upsert(
@@ -906,8 +1078,8 @@ def _sync_one_issue(
         project_id=pid,
         issue_id=iid,
         snyk_status=new_status,
-        organization=ado_org,
-        project=ado_proj,
+        organization=effective_org,
+        project=effective_proj,
         work_item_id=wid,
         work_item_status=wst,
         snyk_project_name=snyk_pn,
@@ -918,8 +1090,8 @@ def _sync_one_issue(
 
     if patch_area and effective_area:
         wit_client.add_work_item_comment(
-            ado_org,
-            ado_proj,
+            stored_org,
+            stored_proj,
             wid,
             _format_area_path_move_comment(previous=current_area, new=effective_area),
         )
@@ -931,4 +1103,4 @@ def _sync_one_issue(
             issue_key=issue_key,
             prior_work_item_id=None,
         )
-        wit_client.add_work_item_comment(ado_org, ado_proj, wid, text)
+        wit_client.add_work_item_comment(stored_org, stored_proj, wid, text)

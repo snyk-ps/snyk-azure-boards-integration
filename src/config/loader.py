@@ -60,6 +60,7 @@ _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
         "work_item_state_closed",
         "work_item_description_field",
         "area_path",
+        "auto_create_area_path",
     },
 )
 
@@ -596,6 +597,16 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         stripped = area_path_raw.strip()
         area_path = stripped if stripped else None
 
+    auto_create_raw = defaults_raw.get("auto_create_area_path", False)
+    if auto_create_raw is None:
+        auto_create_area_path = False
+    elif not isinstance(auto_create_raw, bool):
+        raise ConfigError(
+            "azure_boards.defaults.auto_create_area_path must be a boolean",
+        )
+    else:
+        auto_create_area_path = auto_create_raw
+
     return AzureBoardsDefaults(
         organization=org,
         project=proj,
@@ -612,6 +623,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,
         area_path=area_path,
+        auto_create_area_path=auto_create_area_path,
     )
 
 

@@ -11,6 +11,7 @@ from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig
 
 DEFAULT_REPO_MAPPING_CSV = "repo-mapping.csv"
+AUTO_DEFAULT_AREA_SEGMENT = "Snyk"
 
 _GITHUB_FAMILY_ORIGINS: frozenset[str] = frozenset(
     {
@@ -260,7 +261,8 @@ def resolve_routing(
     Resolve effective ADO target, area path, and assignee for one issue.
 
     ADO org/project precedence: CSV row → merged config ``organization`` / ``project``.
-    Area path precedence: CSV row → merged ``defaults.area_path`` → unset.
+    Area path precedence: CSV row → merged ``defaults.area_path`` → when
+    ``defaults.auto_create_area_path`` is ``True``, ``{project}\\Snyk`` → unset.
     Assignee: non-empty CSV assignee when row matches; else template rules.
     """
     config_org = boards.organization.strip() or boards.defaults.organization.strip()
@@ -297,6 +299,18 @@ def resolve_routing(
             assignee=None,
             ado_target_source="config",
             area_path_source=area_source,
+            assignee_from_csv=False,
+        )
+
+    if boards.defaults.auto_create_area_path and config_project:
+        fallback = f"{config_project}\\{AUTO_DEFAULT_AREA_SEGMENT}"
+        return ResolvedRouting(
+            organization=config_org,
+            project=config_project,
+            area_path=fallback,
+            assignee=None,
+            ado_target_source="config",
+            area_path_source="auto_default",
             assignee_from_csv=False,
         )
 

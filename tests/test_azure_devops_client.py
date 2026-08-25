@@ -268,3 +268,51 @@ def test_429_exhausted_raises() -> None:
     )
     with pytest.raises(AzureDevOpsRateLimitError):
         client.get_work_item("o", "p", 1)
+
+
+def test_get_classification_node_returns_none_on_404() -> None:
+    def opener(req: Request, timeout: float = 0) -> None:
+        raise HTTPError(req.full_url, 404, "Not Found", HTTPMessage(), None)
+
+    client = WorkItemsClient(pat="x", opener=opener)
+    assert client.get_classification_node("org", "proj", "AppTeam\\Snyk") is None
+
+
+def test_get_classification_node_returns_payload_on_200() -> None:
+    body = json.dumps({"name": "Snyk", "path": "AppTeam\\Snyk"}).encode("utf-8")
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        assert "/classificationnodes/Areas/" in req.full_url
+        return _FakeResp(body)
+
+    client = WorkItemsClient(pat="x", opener=opener)
+    node = client.get_classification_node("org", "proj", "AppTeam\\Snyk")
+    assert node is not None
+    assert node["name"] == "Snyk"
+
+
+def test_create_classification_node_posts_json_name() -> None:
+    captured: dict[str, object] = {}
+
+    def opener(req: Request, timeout: float = 0) -> _FakeResp:
+        captured["url"] = req.full_url
+        captured["body"] = req.data
+        return _FakeResp(json.dumps({"name": "Snyk"}).encode("utf-8"))
+
+    client = WorkItemsClient(pat="x", opener=opener)
+    client.create_classification_node("org", "proj", "AppTeam", "Snyk")
+    assert "/classificationnodes/Areas/AppTeam" in str(captured["url"])
+    raw_body = captured["body"]
+    if isinstance(raw_body, bytes):
+        raw_body = raw_body.decode("utf-8")
+    assert json.loads(raw_body) == {"name": "Snyk"}
+
+
+def test_create_classification_node_surfaces_403_without_pat() -> None:
+    def opener(req: Request, timeout: float = 0) -> None:
+        raise HTTPError(req.full_url, 403, "Forbidden", HTTPMessage(), None)
+
+    client = WorkItemsClient(pat="secret-token", opener=opener)
+    with pytest.raises(AzureDevOpsAuthError) as exc_info:
+        client.create_classification_node("org", "proj", "AppTeam", "Snyk")
+    assert "secret-token" not in str(exc_info.value)

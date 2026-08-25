@@ -16,12 +16,13 @@ from config.models import (
     OrgMapping,
 )
 from integrations.azure_devops.client import WorkItemsClient
-from integrations.azure_devops.errors import AzureDevOpsClientError
+from integrations.azure_devops.errors import AzureDevOpsAuthError, AzureDevOpsClientError
 from mapping_store.protocol import MappingRow, MappingStore
 from observability.integration_audit import log_missing_mapped_work_item, log_sync_summary
 from observability.sync_context import get_sync_run_id, reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 
+from sync.area_path import AreaPathEnsureCache, ensure_area_path_exists
 from sync.azure_batch import batch_get_work_items
 from sync.description_field import DescriptionFieldResolver, warm_description_fields_for_sync
 from sync.effective import (
@@ -160,6 +161,43 @@ def _work_item_area_path(wi: Mapping[str, Any] | None) -> str:
     return str(fields.get("System.AreaPath") or "").strip()
 
 
+def _ensure_routing_area_path_if_enabled(
+    *,
+    wit_client: WorkItemsClient,
+    boards: AzureBoardsConfig,
+    routing: ResolvedRouting,
+    ensure_cache: AreaPathEnsureCache,
+    log: logging.Logger,
+    issue_key: str,
+) -> bool:
+    """
+    Ensure the routing area path exists when ``auto_create_area_path`` is enabled.
+
+    Returns ``False`` when ensure fails and the caller should skip the issue.
+    """
+    if not boards.defaults.auto_create_area_path:
+        return True
+    area = str(routing.area_path or "").strip()
+    if not area:
+        return True
+    try:
+        ensure_area_path_exists(
+            wit_client,
+            routing.organization,
+            routing.project,
+            area,
+            ensure_cache,
+        )
+        return True
+    except (AzureDevOpsAuthError, AzureDevOpsClientError) as exc:
+        log.warning(
+            "sync skip issue=%s (area path ensure failed): %s",
+            issue_key,
+            exc,
+        )
+        return False
+
+
 def _log_issue_routing(
     log: logging.Logger,
     *,
@@ -221,6 +259,8 @@ def _create_replacement_work_item(
     audit_prior_work_item: bool,
     audit_comment: str | None,
     routing: ResolvedRouting,
+    boards: AzureBoardsConfig,
+    area_path_ensure_cache: AreaPathEnsureCache,
     log: logging.Logger,
 ) -> str:
     """
@@ -234,6 +274,15 @@ def _create_replacement_work_item(
         routing=routing,
         effective_wit=effective_wit,
     )
+    if not _ensure_routing_area_path_if_enabled(
+        wit_client=wit_client,
+        boards=boards,
+        routing=routing,
+        ensure_cache=area_path_ensure_cache,
+        log=log,
+        issue_key=issue_key,
+    ):
+        return ""
     patches = build_create_patch(
         title=title,
         description=description,
@@ -366,6 +415,7 @@ def _run_sync_body(
     ab = config.azure_boards
     repo_index = load_repo_mapping_index(config)
     global_area_path = ab.defaults.area_path
+    area_path_ensure_cache: AreaPathEnsureCache = {}
     description_fields = DescriptionFieldResolver(wit_client)
     warm_description_fields_for_sync(config, description_fields)
 
@@ -420,6 +470,7 @@ def _run_sync_body(
                 or m.snyk_org_id.strip(),
                 repo_index=repo_index,
                 global_defaults_area_path=global_area_path,
+                area_path_ensure_cache=area_path_ensure_cache,
             )
         log.info("sync run finished (org_mappings mode)")
         return 0
@@ -467,6 +518,7 @@ def _run_sync_body(
         snyk_group_id_for_detail=group_id,
         repo_index=repo_index,
         global_defaults_area_path=global_area_path,
+        area_path_ensure_cache=area_path_ensure_cache,
     )
     log.info("sync run finished for group_id=%s", group_id)
     return 0
@@ -494,6 +546,7 @@ def _run_sync_batch(
     snyk_group_id_for_detail: str,
     repo_index: RepoMappingIndex,
     global_defaults_area_path: str | None,
+    area_path_ensure_cache: AreaPathEnsureCache,
 ) -> None:
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
     for rec in issues:
@@ -552,6 +605,7 @@ def _run_sync_batch(
                 snyk_group_id_for_detail=snyk_group_id_for_detail,
                 repo_index=repo_index,
                 global_defaults_area_path=global_defaults_area_path,
+                area_path_ensure_cache=area_path_ensure_cache,
             )
         except Exception as exc:  # noqa: BLE001 — per-issue isolation
             log.error("sync skip issue_id=%s: %s", iid, exc)
@@ -582,6 +636,7 @@ def _sync_one_issue(
     snyk_group_id_for_detail: str,
     repo_index: RepoMappingIndex,
     global_defaults_area_path: str | None,
+    area_path_ensure_cache: AreaPathEnsureCache,
 ) -> None:
     gid, oid, pid, iid = natural_key
     rec = enrich_issue_record(
@@ -766,6 +821,8 @@ def _sync_one_issue(
                 audit_prior_work_item=False,
                 audit_comment=migration_comment,
                 routing=routing,
+                boards=boards,
+                area_path_ensure_cache=area_path_ensure_cache,
                 log=log,
             )
             return
@@ -841,6 +898,15 @@ def _sync_one_issue(
             routing=routing,
             effective_wit=effective_wit,
         )
+        if not _ensure_routing_area_path_if_enabled(
+            wit_client=wit_client,
+            boards=boards,
+            routing=routing,
+            ensure_cache=area_path_ensure_cache,
+            log=log,
+            issue_key=issue_key,
+        ):
+            return
         patches = build_create_patch(
             title=title,
             description=description,
@@ -924,6 +990,15 @@ def _sync_one_issue(
                     routing=routing,
                     effective_wit=effective_wit,
                 )
+                if patch_area and not _ensure_routing_area_path_if_enabled(
+                    wit_client=wit_client,
+                    boards=boards,
+                    routing=routing,
+                    ensure_cache=area_path_ensure_cache,
+                    log=log,
+                    issue_key=issue_key,
+                ):
+                    return
                 patches = build_update_patch(
                     title=title,
                     description=description,
@@ -1013,6 +1088,8 @@ def _sync_one_issue(
             audit_prior_work_item=prev_snyk is not None and prev_snyk != new_status,
             audit_comment=None,
             routing=routing,
+            boards=boards,
+            area_path_ensure_cache=area_path_ensure_cache,
             log=log,
         )
         return
@@ -1095,6 +1172,8 @@ def _sync_one_issue(
             audit_prior_work_item=True,
             audit_comment=None,
             routing=routing,
+            boards=boards,
+            area_path_ensure_cache=area_path_ensure_cache,
             log=log,
         )
         return
@@ -1113,6 +1192,15 @@ def _sync_one_issue(
         routing=routing,
         effective_wit=effective_wit,
     )
+    if patch_area and not _ensure_routing_area_path_if_enabled(
+        wit_client=wit_client,
+        boards=boards,
+        routing=routing,
+        ensure_cache=area_path_ensure_cache,
+        log=log,
+        issue_key=issue_key,
+    ):
+        return
     patches = build_update_patch(
         title=title,
         description=description,

@@ -118,3 +118,31 @@ def work_item_comment_url(
     wid = quote(str(work_item_id).strip(), safe="")
     q = urlencode({"api-version": api_version})
     return f"{root}/{org}/{proj}/_apis/wit/workItems/{wid}/comments?{q}"
+
+
+def _classification_path_segment(path: str) -> str:
+    """Encode an ADO classification path for URL segments (``\\`` → ``/``)."""
+    normalized = str(path or "").strip().replace("\\", "/")
+    parts = [p.strip() for p in normalized.split("/") if p.strip()]
+    return "/".join(quote(part, safe="") for part in parts)
+
+
+def classification_node_url(
+    base_url: str,
+    organization: str,
+    project: str,
+    structure_group: str,
+    path: str | None,
+    *,
+    api_version: str,
+) -> str:
+    """Build URL for Classification Nodes GET/POST under ``Areas`` or ``Iterations``."""
+    root = normalize_devops_base_url(base_url)
+    org = _segment(organization)
+    proj = _segment(project)
+    group = quote(structure_group.strip(), safe="")
+    q = urlencode({"api-version": api_version})
+    base = f"{root}/{org}/{proj}/_apis/wit/classificationnodes/{group}"
+    if path and str(path).strip():
+        return f"{base}/{_classification_path_segment(path)}?{q}"
+    return f"{base}?{q}"

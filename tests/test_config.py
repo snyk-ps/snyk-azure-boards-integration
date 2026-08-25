@@ -731,6 +731,63 @@ def test_load_app_config_rejects_flat_area_path(tmp_path: Path) -> None:
         load_app_config(config_path=str(p), cli_group_id=None)
 
 
+def test_load_app_config_auto_create_area_path_defaults_false(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("azure_boards:\n  defaults: {}\n", encoding="utf-8")
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.auto_create_area_path is False
+
+
+def test_load_app_config_auto_create_area_path_true(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  defaults:\n    auto_create_area_path: true\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.auto_create_area_path is True
+
+
+def test_load_app_config_rejects_flat_auto_create_area_path(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text("azure_boards:\n  auto_create_area_path: true\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="azure_boards.defaults.auto_create_area_path"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_load_app_config_rejects_non_boolean_auto_create_area_path(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  defaults:\n    auto_create_area_path: maybe\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="auto_create_area_path"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_org_mapping_override_auto_create_area_path(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    auto_create_area_path: false\n"
+        "  org_mappings:\n"
+        "    - organization: ado-o\n"
+        "      project: ado-p\n"
+        "      snyk_org_id: org-uuid\n"
+        "      snyk_org_slug: slug\n"
+        "      overrides:\n"
+        "        auto_create_area_path: true\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id="g")
+    merged = c.azure_boards.org_mappings[0]
+    from sync.effective import boards_for_org_mapping
+
+    boards = boards_for_org_mapping(c, merged)
+    assert boards.defaults.auto_create_area_path is True
+
+
 def test_load_app_config_repo_mapping_csv_and_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(

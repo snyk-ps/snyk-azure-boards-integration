@@ -9,6 +9,7 @@ import pytest
 from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig, AzureBoardsDefaults, SnykConfig
 from sync.repo_mapping import (
+    AUTO_DEFAULT_AREA_SEGMENT,
     RepoMappingIndex,
     RepoMappingMatch,
     load_repo_mapping_index,
@@ -282,6 +283,46 @@ def test_resolve_routing_none_when_unset() -> None:
     )
     assert routing.organization == "cfg-o"
     assert routing.project == "cfg-p"
+    assert routing.area_path is None
+    assert routing.area_path_source == "none"
+
+
+def test_resolve_routing_auto_default_when_enabled() -> None:
+    index = RepoMappingIndex.empty()
+    boards = AzureBoardsConfig(
+        defaults=AzureBoardsDefaults(
+            organization="cfg-o",
+            project="AppTeam",
+            auto_create_area_path=True,
+        ),
+    )
+    routing = resolve_routing(
+        index=index,
+        snyk_project_origin="cli",
+        snyk_project_name="org/repo",
+        boards=boards,
+        global_defaults_area_path=None,
+    )
+    assert routing.area_path == f"AppTeam\\{AUTO_DEFAULT_AREA_SEGMENT}"
+    assert routing.area_path_source == "auto_default"
+
+
+def test_resolve_routing_auto_default_disabled_when_false() -> None:
+    index = RepoMappingIndex.empty()
+    boards = AzureBoardsConfig(
+        defaults=AzureBoardsDefaults(
+            organization="cfg-o",
+            project="AppTeam",
+            auto_create_area_path=False,
+        ),
+    )
+    routing = resolve_routing(
+        index=index,
+        snyk_project_origin="cli",
+        snyk_project_name="org/repo",
+        boards=boards,
+        global_defaults_area_path=None,
+    )
     assert routing.area_path is None
     assert routing.area_path_source == "none"
 

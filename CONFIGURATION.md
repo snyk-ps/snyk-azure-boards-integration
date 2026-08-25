@@ -49,6 +49,7 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `work_item_description_appendix` | string | `""` | Optional **appendix**: your own plain text, added **at the end** of the work item description **after** the auto-generated Snyk content (finding info and links). **`sync`** turns the full description into HTML for Azure DevOps; this text is **escaped** as plain text, not treated as HTML. If you omit the key or the value is only whitespace after trim, nothing extra is added. You can set a different appendix per **`org_mappings`** row via **`overrides`**. Use for runbooks or notes, **not** secrets. |
 | `work_item_template` | object | (see below) | **`tags`**, optional **`json_patch`**; see **`work_item_template`**. |
 | `area_path` | string | (omit) | Fallback **`System.AreaPath`** when no **`repo-mapping.csv`** row matches. Overridable per **`org_mappings`** row via **`overrides.area_path`**. |
+| `auto_create_area_path` | boolean | `false` | When **`true`**, **`sync`** ensures effective area paths exist in Azure DevOps before create/update, and when no area path is otherwise configured synthesizes **`{project}\Snyk`** as the fallback. Overridable per **`org_mappings`** row via **`overrides.auto_create_area_path`**. Requires optional project **Create child nodes** permissions — see **[Azure DevOps PAT § Optional — auto-create area paths](CONFIGURATION.md#optional--auto-create-area-paths)**. |
 
 ## `azure_boards.ado_targets` (optional)
 
@@ -107,7 +108,7 @@ Define one **`ado_targets`** entry for each distinct ADO **`(organization, proje
 
 **Multi-project within one Snyk org:** Keep a single **`org_mappings`** row (1:1 Snyk org baseline) and use **`repo-mapping.csv`** to route different repositories to different ADO projects. Do **not** duplicate **`snyk_org_id`** rows in YAML.
 
-**Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → omit (ADO project default).
+**Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → when **`auto_create_area_path`** is **`true`**, **`{project}\Snyk`** → omit (ADO project default).
 
 **PAT scope:** **`AZURE_DEVOPS_PAT`** must authorize every **ADO Organization** and **project** (first **Area Path** segment) listed in the CSV.
 
@@ -283,6 +284,17 @@ That one scope covers everything in this repository:
 - **`azure-devops-smoke`**: **reads** a single work item to verify connectivity and auth (read is included in **Read & write**).
 
 If your dialog uses different labels, pick the option that allows both reading and changing work items, and confirm against [Microsoft’s PAT documentation](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops) (Microsoft Learn).
+
+### Optional — auto-create area paths
+
+When **`azure_boards.defaults.auto_create_area_path`** (or a per-row **`org_mappings[].overrides.auto_create_area_path`**) is **`true`**, **`sync`** may create missing area path nodes via the Azure DevOps Classification Nodes API before assigning work items. The base **Work Items: Read & write** PAT scope above is still sufficient at the token level.
+
+Additionally, the PAT user needs **project permissions** to manage the area hierarchy:
+
+- **Create child nodes** = **Allow** on the parent area node(s) under which new segments will be added (**Project Settings** → **Project configuration** → **Areas** → select a node → **Security**).
+- Some organizations require **Project Administrators** to add areas directly under the project root node.
+
+These permissions are **optional** — only required when **`auto_create_area_path`** is enabled. If you pre-create area paths manually (or set explicit **`area_path`** values that already exist), leave **`auto_create_area_path`** at **`false`** (default) and no extra permissions are needed.
 
 ## The `sync` command
 

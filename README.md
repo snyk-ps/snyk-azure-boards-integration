@@ -62,7 +62,7 @@ All variables and overrides: **[CONFIGURATION.md § Environment variables](CONFI
 
 ### Azure DevOps PAT
 
-Use **`AZURE_DEVOPS_PAT`**. Set **Work Items** to **Read & write** in the PAT dialog (labels vary by Azure DevOps version). That covers **`sync`** (read/update/create/comment) and **`azure-devops-smoke`**.
+Use **`AZURE_DEVOPS_PAT`**. Set **Work Items** to **Read & write** in the PAT dialog (labels vary by Azure DevOps version). That covers **`sync`** (read/update/create/comment) and **`azure-devops-smoke`**. When **`auto_create_area_path`** is enabled, additional project **Create child nodes** permissions may be required — see **[CONFIGURATION.md § Optional — auto-create area paths](CONFIGURATION.md#optional--auto-create-area-paths)**.
 
 Steps to create a token: **[CONFIGURATION.md § Azure DevOps personal access token](CONFIGURATION.md#azure-devops-personal-access-token-pat)** (and [Microsoft PAT documentation](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops)).
 

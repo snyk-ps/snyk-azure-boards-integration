@@ -35,6 +35,7 @@ from integrations.azure_devops.normalize import (
     normalize_work_item_document,
 )
 from integrations.azure_devops.urls import (
+    classification_node_url,
     normalize_devops_base_url,
     work_item_comment_url,
     work_item_create_url,
@@ -441,3 +442,58 @@ class WorkItemsClient:
             content_type="application/json",
         )
         return normalize_comment_document(doc, work_item_id=work_item_id)
+
+    def get_classification_node(
+        self,
+        organization: str,
+        project: str,
+        path: str,
+        *,
+        structure_group: str = "Areas",
+    ) -> dict[str, Any] | None:
+        """
+        Fetch a classification node by full path.
+
+        Returns ``None`` when ADO responds with **404** (node not found).
+        """
+        url = classification_node_url(
+            self._base_url,
+            organization,
+            project,
+            structure_group,
+            path,
+            api_version=self._wit_api_version,
+        )
+        try:
+            return self._request_json("GET", url, mutating=False)
+        except AzureDevOpsClientError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+
+    def create_classification_node(
+        self,
+        organization: str,
+        project: str,
+        parent_path: str | None,
+        name: str,
+        *,
+        structure_group: str = "Areas",
+    ) -> dict[str, Any]:
+        """Create a child classification node under ``parent_path`` (or project root)."""
+        url = classification_node_url(
+            self._base_url,
+            organization,
+            project,
+            structure_group,
+            parent_path,
+            api_version=self._wit_api_version,
+        )
+        body = json.dumps({"name": str(name).strip()}).encode("utf-8")
+        return self._request_json(
+            "POST",
+            url,
+            mutating=True,
+            body=body,
+            content_type="application/json",
+        )

@@ -35,8 +35,12 @@ azure_boards:
     work_item_state_closed: Closed
     # Optional YAML area path fallback (does not require a CSV file when repo_mapping_csv: "").
     # When CSV routing is enabled: used only when no repo-mapping.csv row matches this issue
-    # (precedence: CSV row → org_mappings[].overrides.area_path → defaults.area_path → ADO default).
+    # (precedence: CSV row → org_mappings[].overrides.area_path → defaults.area_path
+    # → {project}\Snyk when auto_create_area_path → ADO default).
     # area_path: "MyProject\\TeamA"
+    # When true: ensure area paths exist in ADO; fallback to {project}\Snyk when no path configured.
+    # Requires optional Create child nodes project permissions — see CONFIGURATION.md.
+    # auto_create_area_path: true
     # Omit work_item_description_field: sync auto-uses System.Description, then
     # Microsoft.VSTS.TCM.ReproSteps when Description is not on the work item type.
     # work_item_description_field: Microsoft.VSTS.TCM.ReproSteps  # explicit (e.g. Bug)

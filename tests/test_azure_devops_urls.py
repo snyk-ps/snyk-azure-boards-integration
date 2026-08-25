@@ -1,6 +1,7 @@
 """Tests for Azure DevOps URL builders."""
 
 from integrations.azure_devops.urls import (
+    classification_node_url,
     normalize_devops_base_url,
     work_item_comment_url,
     work_item_create_url,
@@ -75,3 +76,25 @@ def test_work_item_comment_url_uses_work_items_casing() -> None:
     )
     assert "/_apis/wit/workItems/9/comments" in url
     assert "api-version=7.0-preview.3" in url
+
+
+def test_classification_node_url_root_and_nested() -> None:
+    root = classification_node_url(
+        "https://dev.azure.com",
+        "org",
+        "proj",
+        "Areas",
+        None,
+        api_version="7.1",
+    )
+    assert root.endswith("/_apis/wit/classificationnodes/Areas?api-version=7.1")
+    nested = classification_node_url(
+        "https://dev.azure.com",
+        "org",
+        "proj",
+        "Areas",
+        r"AppTeam\Snyk",
+        api_version="7.1",
+    )
+    assert "/_apis/wit/classificationnodes/Areas/AppTeam/Snyk" in nested
+    assert "api-version=7.1" in nested

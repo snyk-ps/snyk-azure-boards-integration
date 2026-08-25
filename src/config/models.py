@@ -34,6 +34,8 @@ class AzureBoardsDefaults:
     sync_included_snyk_origins: tuple[str, ...] | None = None
     #: Default Azure DevOps area path when no ``repo-mapping.csv`` row matches.
     area_path: str | None = None
+    #: When ``True``, ensure area paths exist in ADO and synthesize ``{project}\\Snyk`` fallback.
+    auto_create_area_path: bool = False
 
 
 @dataclass

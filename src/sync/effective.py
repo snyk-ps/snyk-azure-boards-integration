@@ -145,6 +145,15 @@ def _merged_defaults_with_overrides(
         stripped = str(raw_ap or "").strip()
         area_path = stripped if stripped else None
 
+    auto_create_area_path = base.auto_create_area_path
+    if "auto_create_area_path" in o:
+        raw_ac = o["auto_create_area_path"]
+        if not isinstance(raw_ac, bool):
+            raise ConfigError(
+                "org_mappings[].overrides.auto_create_area_path must be a boolean",
+            )
+        auto_create_area_path = raw_ac
+
     wit_tmpl = dict(base.work_item_template)
 
     return AzureBoardsDefaults(
@@ -163,6 +172,7 @@ def _merged_defaults_with_overrides(
         work_item_template=dict(wit_tmpl),
         sync_included_snyk_origins=allowlist,
         area_path=area_path,
+        auto_create_area_path=auto_create_area_path,
     )
 
 

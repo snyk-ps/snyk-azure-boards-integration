@@ -20,7 +20,12 @@ _MINIMAL_CSV = (
 )
 
 
-def _cfg_yaml(*, area_path: str = "", repo_csv: str = "repo-mapping.csv") -> str:
+def _cfg_yaml(
+    *,
+    area_path: str = "",
+    repo_csv: str = "repo-mapping.csv",
+    auto_create_area_path: bool | None = None,
+) -> str:
     lines = [
         "azure_boards:",
         f"  repo_mapping_csv: {repo_csv!r}",
@@ -30,6 +35,8 @@ def _cfg_yaml(*, area_path: str = "", repo_csv: str = "repo-mapping.csv") -> str
     ]
     if area_path:
         lines.append(f"    area_path: '{area_path}'")
+    if auto_create_area_path is not None:
+        lines.append(f"    auto_create_area_path: {str(auto_create_area_path).lower()}")
     lines.extend(
         [
             "  org_mappings:",
@@ -524,3 +531,99 @@ def test_run_sync_yaml_fallback_when_no_csv_match(
     patches = create_args[3]
     area_ops = [o for o in patches if o.get("path") == "/fields/System.AreaPath"]
     assert area_ops and area_ops[0]["value"] == "Default\\Area"
+
+
+def test_run_sync_auto_default_area_path_with_ensure(
+    tmp_path: Path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        _cfg_yaml(repo_csv="", auto_create_area_path=True),
+        encoding="utf-8",
+    )
+    cfg = load_app_config(config_path=str(cfg_path), cli_group_id=None)
+
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
+    wit.get_classification_node.side_effect = [
+        None,
+    ]
+    wit.create_work_item.return_value = {"work_item_id": "1", "work_item_status": "New"}
+
+    monkeypatch.setattr(issues, "iter_org_issues", lambda *a, **k: iter([_open_issue()]))
+    monkeypatch.setattr(
+        issues,
+        "get_org_project",
+        lambda org, pid: {"name": "my-org/payments-api", "origin": "github"},
+    )
+    monkeypatch.setattr("sync.run.batch_get_work_items", lambda *a, **k: {})
+
+    rc = run_sync(config=cfg, issues_client=issues, wit_client=wit, store=store)
+    assert rc == 0
+    wit.create_classification_node.assert_called_once_with(
+        "ado-o",
+        "ado-p",
+        None,
+        "Snyk",
+    )
+    patches = wit.create_work_item.call_args[0][3]
+    area_ops = [o for o in patches if o.get("path") == "/fields/System.AreaPath"]
+    assert area_ops and area_ops[0]["value"] == "ado-p\\Snyk"
+
+
+def test_run_sync_skips_issue_when_area_path_ensure_forbidden(
+    tmp_path: Path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.azure_devops.errors import AzureDevOpsAuthError
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        _cfg_yaml(
+            area_path=r"ado-p\Snyk",
+            repo_csv="",
+            auto_create_area_path=True,
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_app_config(config_path=str(cfg_path), cli_group_id=None)
+
+    issue = _open_issue()
+    issue["snyk_project_name"] = "other-org/other-repo"
+
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
+    wit.get_classification_node.side_effect = [
+        None,
+    ]
+    wit.create_classification_node.side_effect = AzureDevOpsAuthError(
+        "forbidden",
+        status_code=403,
+    )
+
+    monkeypatch.setattr(issues, "iter_org_issues", lambda *a, **k: iter([issue]))
+    monkeypatch.setattr(
+        issues,
+        "get_org_project",
+        lambda org, pid: {"name": "other-org/other-repo", "origin": "github"},
+    )
+    monkeypatch.setattr("sync.run.batch_get_work_items", lambda *a, **k: {})
+
+    rc = run_sync(config=cfg, issues_client=issues, wit_client=wit, store=store)
+    assert rc == 0
+    wit.create_work_item.assert_not_called()
+    assert store.get_by_natural_key(
+        group_id="group-uuid",
+        org_id="org-uuid",
+        project_id="proj-uuid",
+        issue_id="ISS-1",
+    ) is None

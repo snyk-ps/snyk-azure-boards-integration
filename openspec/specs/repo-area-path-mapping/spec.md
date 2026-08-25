@@ -236,13 +236,14 @@ Effective **area path** resolution SHALL use this order (first non-empty wins):
 1. Matching **`repo-mapping.csv`** row full **`Area Path`** value
 2. Merged **`org_mappings[].overrides.area_path`** for the active routing row
 3. Merged **`azure_boards.defaults.area_path`**
-4. No area path (ADO project default — omit **`System.AreaPath`** patch)
+4. When merged **`auto_create_area_path`** is **`true`**: synthesize **`{effective_ado_project}\Snyk`** (fixed segment **`Snyk`** in v1)
+5. No area path (ADO project default — omit **`System.AreaPath`** patch)
 
 When a CSV row matches, optional **`Assignee (Optional)`** or legacy **`Assignee`** (non-empty after trim) SHALL be the effective assignee for **`System.AssignedTo`** on **create and update**, **overriding** merged **`work_item_template`** **`json_patch`** assignee values. When the CSV row matches but assignee is empty, assignee SHALL follow existing template merge rules.
 
 When no CSV row matches, assignee SHALL follow existing template merge rules only.
 
-The implementation MAY log **`ado_target_source`** as **`csv`** or **`config`** and **`area_path_source`** as **`csv`**, **`org_override`**, **`defaults`**, or **`none`** at INFO without secrets.
+The implementation MAY log **`ado_target_source`** as **`csv`** or **`config`** and **`area_path_source`** as **`csv`**, **`org_override`**, **`defaults`**, **`auto_default`**, or **`none`** at INFO without secrets.
 
 #### Scenario: CSV match supplies ADO org project and area path
 
@@ -264,12 +265,20 @@ The implementation MAY log **`ado_target_source`** as **`csv`** or **`config`** 
 - **WHEN** no CSV row matches and **`overrides.area_path`** is **`Proj\\TeamC`** with **`defaults.area_path`** **`Proj\\TeamB`**
 - **THEN** the effective area path SHALL be **`Proj\\TeamC`**
 
+#### Scenario: auto_create_area_path synthesizes Snyk fallback
+
+- **WHEN** no CSV row matches, org override and **`defaults.area_path`** are unset, merged **`auto_create_area_path`** is **`true`**, and effective ADO project is **`AppTeam`**
+- **THEN** the effective area path SHALL be **`AppTeam\\Snyk`** and **`area_path_source`** SHALL be **`auto_default`**
+
+#### Scenario: auto_create_area_path false preserves unset behavior
+
+- **WHEN** no CSV row matches, org override and **`defaults.area_path`** are unset, and merged **`auto_create_area_path`** is **`false`**
+- **THEN** the effective area path SHALL be unset and **`area_path_source`** SHALL be **`none`**
+
 #### Scenario: CSV assignee overrides template
 
 - **WHEN** a CSV row matches with **`Assignee (Optional)`** **`user@example.com`** and merged template **`json_patch`** sets **`System.AssignedTo`** to another value
 - **THEN** the effective assignee for create/update SHALL be **`user@example.com`**
-
----
 
 ### Requirement: Sample repo mapping CSV under data
 

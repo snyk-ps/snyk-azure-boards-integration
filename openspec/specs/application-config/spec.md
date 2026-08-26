@@ -179,12 +179,14 @@ Each **`ado_targets[]`** element SHALL be a mapping containing:
 - **`organization`**: required non-empty string after trim — Azure DevOps organization name.
 - **`project`**: required non-empty string after trim — Azure DevOps project name or id.
 - Optional work-item taxonomy keys (subset of **`azure_boards.defaults`**): **`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, **`work_item_description_field`**, **`work_item_template`** (**`tags`**, **`json_patch`**).
+- Optional **`auto_create_fallback_area_path`**: string template with **`{project}`** placeholder (same validation rules as **`defaults.auto_create_fallback_area_path`**).
 
 The loader SHALL reject:
 
 - Entries missing **`organization`** or **`project`**, or with empty strings after trim for those keys.
 - Duplicate **`(organization, project)`** pairs after trim (case-sensitive comparison on trimmed values).
 - Non-string values for taxonomy keys or invalid **`work_item_template`** shape (same rules as **`defaults.work_item_template`**).
+- Invalid **`auto_create_fallback_area_path`** values (same rules as under **`defaults`**).
 - **`ado_targets`** as a direct child of any key other than **`azure_boards`**.
 
 When **`ado_targets`** is omitted or an empty list, behavior SHALL be unchanged from configurations without this key.
@@ -204,13 +206,20 @@ When **`ado_targets`** is omitted or an empty list, behavior SHALL be unchanged 
 - **WHEN** YAML omits **`ado_targets`**
 - **THEN** loading SHALL succeed and **`sync`** SHALL use existing **`defaults`** and **`org_mappings[].overrides`** merge rules only
 
+#### Scenario: ado_targets row with fallback template loads
+
+- **WHEN** an **`ado_targets`** row includes **`auto_create_fallback_area_path: "{project}\\Security"`**
+- **THEN** loading SHALL succeed and expose that template for the matching **`(organization, project)`**
+
 ---
 
 ### Requirement: ado_targets operator documentation
 
-**`CONFIGURATION.md`** and **`README.md`** SHALL document **`azure_boards.ado_targets`**: purpose (per ADO destination work-item profiles for multi-project CSV routing), allowed keys, duplicate-key rejection, and precedence relative to **`defaults`**, **`org_mappings[].overrides`**, and optional CSV taxonomy columns.
+**`CONFIGURATION.md`** and **`README.md`** SHALL document **`azure_boards.ado_targets`**: purpose (per ADO destination work-item profiles for multi-project CSV routing), allowed keys (including **`auto_create_fallback_area_path`**), duplicate-key rejection, and precedence relative to **`defaults`**, **`org_mappings[].overrides`**, and optional CSV taxonomy columns.
 
 Documentation SHALL recommend defining one **`ado_targets`** entry for each distinct ADO **`(organization, project)`** referenced in **`repo-mapping.csv`** **Area Path** first segments and in the active **`org_mappings`** baseline target.
+
+Documentation SHALL state that per-issue fallback template precedence is **`ado_targets`** → **`org_mappings[].overrides`** → **`defaults`**.
 
 #### Scenario: CONFIGURATION documents ado_targets
 
@@ -227,9 +236,11 @@ Each element of **`azure_boards.org_mappings`** SHALL be a mapping containing:
 - **`project`**: non-empty string, Azure DevOps project name or id for REST routing for this row.
 - **`snyk_org_id`**: non-empty string, Snyk organization UUID for org-scoped Issues API calls for this row.
 - **`snyk_org_slug`**: **required** non-empty string after merge for each row: **human-readable** Snyk organization **slug** for **`app.snyk.io`** URL composition (**non-secret**). The loader SHALL reject rows where **`snyk_org_slug`** is missing or empty with a clear, non-secret error pointing at **`azure_boards.org_mappings[].snyk_org_slug`**.
-- **`overrides`**: optional mapping; when present, its keys SHALL be a subset of those allowed under **`azure_boards.defaults`**, including **`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, **`work_item_description_field`**, **`work_item_template`**, **`organization`**, **`project`**, **`create_new_work_items`**, **`severity_threshold`**, **`issues_sync_from`**, **`create_only_when_fix_available`**, **`reopen_work_item_policy`**, **`work_item_description_appendix`**, **`sync_included_snyk_origins`**, **`area_path`**, and **`auto_create_area_path`**. Omitted override keys SHALL inherit from **`defaults`** after merge per **`application-config`** merge rules.
+- **`overrides`**: optional mapping; when present, its keys SHALL be a subset of those allowed under **`azure_boards.defaults`**, including **`work_item_type`**, **`work_item_state_active`**, **`work_item_state_closed`**, **`work_item_description_field`**, **`work_item_template`**, **`organization`**, **`project`**, **`create_new_work_items`**, **`severity_threshold`**, **`issues_sync_from`**, **`create_only_when_fix_available`**, **`reopen_work_item_policy`**, **`work_item_description_appendix`**, **`sync_included_snyk_origins`**, **`area_path`**, **`auto_create_area_path`**, and **`auto_create_fallback_area_path`**. Omitted override keys SHALL inherit from **`defaults`** after merge per **`application-config`** merge rules.
 
 For **work-item taxonomy** fields only, when an explicit **`ado_targets`** entry exists for the same **`(organization, project)`** as an **`org_mappings`** row, **`sync`** SHALL prefer the **`ado_targets`** profile over **`org_mappings[].overrides`** for those fields at runtime. **`org_mappings[].overrides`** work-item fields SHALL still apply when no matching **`ado_targets`** entry exists for that **`(organization, project)`**.
+
+For **`auto_create_fallback_area_path`** at runtime, precedence SHALL be matching **`ado_targets`** entry → **`org_mappings[].overrides`** (when org-mapping target matches effective ADO target) → merged **`defaults`**.
 
 The loader SHALL reject entries missing required keys or containing empty strings for **`organization`**, **`project`**, or **`snyk_org_id`** with a clear, non-secret error.
 
@@ -271,7 +282,12 @@ The loader SHALL reject entries missing required keys or containing empty string
 #### Scenario: Overrides may enable auto_create_area_path per mapping
 
 - **WHEN** an **`org_mappings`** row includes **`overrides.auto_create_area_path: true`** and global **`defaults.auto_create_area_path`** is **`false`**
-- **THEN** loading SHALL succeed and **`sync`** SHALL treat auto-create as enabled for issues routed through that row
+- **THEN** loading SHALL succeed and merged configuration for that row SHALL expose **`auto_create_area_path: true`**
+
+#### Scenario: Overrides may set fallback template per mapping
+
+- **WHEN** an **`org_mappings`** row includes **`overrides.auto_create_fallback_area_path: "{project}\\Triage"`**
+- **THEN** loading SHALL succeed and merged configuration SHALL expose that template for issues routed through that row when no matching **`ado_targets`** entry overrides it
 
 #### Scenario: ado_targets beats org override for same ADO target
 
@@ -702,20 +718,59 @@ The loader SHALL reject a non-string **`repo_mapping_csv`** value.
 
 ---
 
+---
+
+### Requirement: Azure Boards defaults — optional auto_create_fallback_area_path
+
+Under **`azure_boards.defaults`**, when **`auto_create_area_path`** is **`true`**, the configuration MAY include **`auto_create_fallback_area_path`**, a **string** template for the fallback area path. When omitted and **`auto_create_area_path`** is **`true`**, the effective template SHALL be **`{project}\Snyk`**.
+
+The template SHALL support **`{project}`** substitution with the effective ADO project at sync time. After substitution with a placeholder project name at load time, the rendered path MUST satisfy **`Project\Area`** format (at least two segments; first segment equals the substituted project).
+
+The loader SHALL reject empty values and values that cannot render to valid area-path shape. The loader SHALL **not** accept **`auto_create_fallback_area_path`** as a direct child of **`azure_boards`**.
+
+The loader SHALL recognize environment variable **`AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH`** overriding **`azure_boards.defaults.auto_create_fallback_area_path`**, participating in **defaults → YAML → environment → CLI** precedence per existing **`application-config`** rules.
+
+When **`auto_create_area_path`** is **`false`**, **`sync`** SHALL ignore **`auto_create_fallback_area_path`** (the loader MAY still accept the key in YAML).
+
+**`CONFIGURATION.md`**, **`README.md`**, and the tracked sample YAML under **`data/`** SHALL document **`auto_create_fallback_area_path`**, the env var, runtime precedence (**`ado_targets`** → **`org_mappings[].overrides`** → **`defaults`**), and the default **`{project}\Snyk`** template.
+
+#### Scenario: Omitted fallback template uses Snyk default
+
+- **WHEN** **`auto_create_area_path: true`** and **`auto_create_fallback_area_path`** is omitted
+- **THEN** the effective fallback template SHALL be **`{project}\Snyk`**
+
+#### Scenario: Custom fallback template loads
+
+- **WHEN** YAML sets **`auto_create_fallback_area_path: "{project}\\Security"`** under **`defaults`**
+- **THEN** loading SHALL succeed and merged configuration SHALL expose that template
+
+#### Scenario: Invalid template rejected
+
+- **WHEN** YAML sets **`auto_create_fallback_area_path: "Snyk"`** (cannot render to **`Project\Area`** with **`{project}`**)
+- **THEN** loading SHALL fail with a clear error that does not include secrets
+
+#### Scenario: Environment variable overrides YAML defaults
+
+- **WHEN** YAML sets **`defaults.auto_create_fallback_area_path: "{project}\\TeamA"`** and **`AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH="{project}\\TeamB"`** is set
+- **THEN** merged **`defaults.auto_create_fallback_area_path`** SHALL be **`{project}\TeamB`**
+
+---
+
 ### Requirement: Azure Boards defaults — optional auto_create_area_path
 
-Under **`azure_boards.defaults`**, the configuration MAY include **`auto_create_area_path`**, a **boolean** that controls whether **`sync`** SHALL ensure effective area paths exist in Azure DevOps and MAY synthesize a default area path when none is configured. When omitted, the effective value SHALL be **`false`**.
+Under **`azure_boards.defaults`**, the configuration MAY include **`auto_create_area_path`**, a **boolean** that controls whether **`sync`** SHALL synthesize and ensure a **fallback** area path when none is configured or when a configured path is missing in Azure DevOps. When omitted, the effective value SHALL be **`false`**.
 
 The loader SHALL reject a non-boolean value for **`auto_create_area_path`**. The loader SHALL **not** accept **`auto_create_area_path`** as a direct child of **`azure_boards`**; it belongs only under **`azure_boards.defaults`**.
 
 When **`auto_create_area_path`** is **`true`** for the active merged routing context:
 
-- If area-path precedence yields unset, **`sync`** SHALL synthesize **`{effective_ado_project}\Snyk`** as the effective area path (fixed segment **`Snyk`** in v1).
-- Before create/recreate/update paths that set **`System.AreaPath`**, **`sync`** SHALL ensure the full effective area path exists in the effective ADO target via Classification Nodes REST (see **`azure-devops-client`** and **`sync-lifecycle`**).
+- If area-path precedence yields unset, **`sync`** SHALL synthesize the effective fallback path from **`auto_create_fallback_area_path`** (default template **`{project}\Snyk`**) and set **`area_path_source=auto_default`**.
+- If a configured path (CSV row, **`org_mappings[].overrides.area_path`**, or **`defaults.area_path`**) is resolved but **does not exist** in the effective ADO target (strict full-path Classification Nodes GET), **`sync`** SHALL substitute the rendered fallback template and set **`area_path_source=auto_fallback`**.
+- **`sync`** SHALL ensure (create if missing) **only** the effective fallback path via Classification Nodes REST — **not** configured paths that exist or configured paths that were substituted away.
 
 When **`auto_create_area_path`** is **`false`**, behavior SHALL remain unchanged from prior requirements (unset area path → omit **`System.AreaPath`**; configured but missing path → ADO error on patch).
 
-**`CONFIGURATION.md`**, **`README.md`**, and the tracked sample YAML under **`data/`** SHALL document **`auto_create_area_path`**, the **`{project}\Snyk`** fallback when enabled, and that **`org_mappings[].overrides.auto_create_area_path`** may override the global default per mapping row.
+**`CONFIGURATION.md`**, **`README.md`**, and the tracked sample YAML under **`data/`** SHALL document **`auto_create_area_path`**, fallback/default semantics, **`auto_create_fallback_area_path`**, env var **`AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH`**, and that **`org_mappings[].overrides.auto_create_area_path`** may override the global default per mapping row.
 
 #### Scenario: Omitted auto_create_area_path defaults to false
 

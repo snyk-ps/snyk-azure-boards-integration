@@ -31,4 +31,4 @@
 
 ## 5. Archive prep
 
-- [ ] 5.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/refine-auto-create-area-path-fallback/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive refine-auto-create-area-path-fallback`** (or project equivalent) to fold deltas into canonical specs.
+- [x] 5.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/refine-auto-create-area-path-fallback/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive refine-auto-create-area-path-fallback`** (or project equivalent) to fold deltas into canonical specs.

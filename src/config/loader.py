@@ -35,6 +35,7 @@ from config.policy_parse import (
 from config.snyk_origins import parse_sync_included_snyk_origins
 from snyk.constants import DEFAULT_API_ORIGIN, DEFAULT_APP_ORIGIN
 from snyk.urls import normalize_api_origin, normalize_app_origin, resolve_api_origin
+from config.fallback_area_path import validate_fallback_area_path_template
 
 _ALLOWED_MAPPING_STORES: frozenset[str] = frozenset({"sqlite", "azure_table"})
 _AZURE_TABLE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9]{2,62}")
@@ -51,6 +52,7 @@ _ENV_SQLITE_PATH = "MAPPING_STORE_SQLITE_PATH"
 _ENV_AZURE_TABLE_ENDPOINT = "MAPPING_STORE_AZURE_TABLE_ENDPOINT"
 _ENV_AZURE_TABLE_NAME = "MAPPING_STORE_AZURE_TABLE_NAME"
 _ENV_REPO_MAPPING_CSV_PATH = "REPO_MAPPING_CSV_PATH"
+_ENV_AUTO_CREATE_FALLBACK_AREA_PATH = "AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH"
 
 
 _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
@@ -61,6 +63,7 @@ _DEPRECATED_AZURE_BOARDS_WORK_ITEM_KEYS: frozenset[str] = frozenset(
         "work_item_description_field",
         "area_path",
         "auto_create_area_path",
+        "auto_create_fallback_area_path",
     },
 )
 
@@ -328,6 +331,21 @@ def _apply_env_overrides(tree: dict[str, Any]) -> None:
             tree["azure_boards"] = {}
         tree["azure_boards"]["repo_mapping_csv"] = csv_path
 
+    if _ENV_AUTO_CREATE_FALLBACK_AREA_PATH in os.environ:
+        raw = os.environ[_ENV_AUTO_CREATE_FALLBACK_AREA_PATH].strip()
+        if raw:
+            template = validate_fallback_area_path_template(
+                raw,
+                field_prefix="AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH",
+            )
+            tree.setdefault("azure_boards", {})
+            if not isinstance(tree["azure_boards"], dict):
+                tree["azure_boards"] = {}
+            tree["azure_boards"].setdefault("defaults", {})
+            if not isinstance(tree["azure_boards"]["defaults"], dict):
+                tree["azure_boards"]["defaults"] = {}
+            tree["azure_boards"]["defaults"]["auto_create_fallback_area_path"] = template
+
 
 def _reject_deprecated_flat_work_item_keys(ab_raw: dict[str, Any]) -> None:
     """Reject unsupported flat ``work_item_*`` keys under ``azure_boards`` root."""
@@ -374,6 +392,7 @@ _ADO_TARGET_ALLOWED_KEYS: frozenset[str] = frozenset(
         "work_item_state_closed",
         "work_item_description_field",
         "work_item_template",
+        "auto_create_fallback_area_path",
     },
 )
 
@@ -440,6 +459,10 @@ def _parse_ado_targets(ab_raw: dict[str, Any]) -> tuple[list[AdoTargetProfile], 
             item.get("work_item_template"),
             field_prefix=f"azure_boards.ado_targets[{i}].work_item_template",
         )
+        fallback_template = validate_fallback_area_path_template(
+            item.get("auto_create_fallback_area_path"),
+            field_prefix=f"azure_boards.ado_targets[{i}].auto_create_fallback_area_path",
+        )
         profiles.append(
             AdoTargetProfile(
                 organization=org,
@@ -453,6 +476,7 @@ def _parse_ado_targets(ab_raw: dict[str, Any]) -> tuple[list[AdoTargetProfile], 
                 ),
                 work_item_description_field=desc_field,
                 work_item_template=template,
+                auto_create_fallback_area_path=fallback_template,
             ),
         )
     index = AdoTargetIndex.from_profiles(profiles)
@@ -607,6 +631,11 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
     else:
         auto_create_area_path = auto_create_raw
 
+    auto_create_fallback_area_path = validate_fallback_area_path_template(
+        defaults_raw.get("auto_create_fallback_area_path"),
+        field_prefix="azure_boards.defaults.auto_create_fallback_area_path",
+    )
+
     return AzureBoardsDefaults(
         organization=org,
         project=proj,
@@ -624,6 +653,7 @@ def _parse_azure_boards_defaults(ab_raw: dict[str, Any]) -> AzureBoardsDefaults:
         sync_included_snyk_origins=allowlist,
         area_path=area_path,
         auto_create_area_path=auto_create_area_path,
+        auto_create_fallback_area_path=auto_create_fallback_area_path,
     )
 
 

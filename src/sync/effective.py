@@ -23,6 +23,7 @@ from config.models import (
 )
 from config.snyk_origins import parse_sync_included_snyk_origins
 from config.template_merge import merge_work_item_templates
+from config.fallback_area_path import DEFAULT_FALLBACK_AREA_PATH_TEMPLATE
 from sync.repo_mapping import RepoMappingMatch
 
 
@@ -154,6 +155,16 @@ def _merged_defaults_with_overrides(
             )
         auto_create_area_path = raw_ac
 
+    auto_create_fallback_area_path = base.auto_create_fallback_area_path
+    if "auto_create_fallback_area_path" in o:
+        raw_fb = o["auto_create_fallback_area_path"]
+        if raw_fb is not None and not isinstance(raw_fb, str):
+            raise ConfigError(
+                "org_mappings[].overrides.auto_create_fallback_area_path must be a string",
+            )
+        stripped = str(raw_fb or "").strip()
+        auto_create_fallback_area_path = stripped if stripped else None
+
     wit_tmpl = dict(base.work_item_template)
 
     return AzureBoardsDefaults(
@@ -173,6 +184,7 @@ def _merged_defaults_with_overrides(
         sync_included_snyk_origins=allowlist,
         area_path=area_path,
         auto_create_area_path=auto_create_area_path,
+        auto_create_fallback_area_path=auto_create_fallback_area_path,
     )
 
 
@@ -294,6 +306,29 @@ def _merge_effective_template(
         tag_dict = {"tags": list(csv_tags)}
         base = merge_work_item_templates(base, {}, tag_dict)
     return base
+
+
+def resolve_effective_fallback_template(
+    *,
+    defaults: AzureBoardsDefaults,
+    ado_profile: AdoTargetProfile | None,
+    org_mapping: OrgMapping | None,
+    org_override_applies: bool,
+) -> str:
+    """
+    Resolve fallback area path template for one effective ADO target.
+
+    Precedence: ``ado_targets`` → org override (same target) → ``defaults`` → built-in default.
+    """
+    if ado_profile is not None and ado_profile.auto_create_fallback_area_path:
+        return ado_profile.auto_create_fallback_area_path
+    if org_override_applies and org_mapping is not None:
+        raw = org_mapping.overrides.get("auto_create_fallback_area_path")
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    if defaults.auto_create_fallback_area_path:
+        return defaults.auto_create_fallback_area_path
+    return DEFAULT_FALLBACK_AREA_PATH_TEMPLATE
 
 
 def resolve_effective_work_item_config(

@@ -7,7 +7,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from integrations.azure_devops.errors import AzureDevOpsAuthError, AzureDevOpsClientError
-from sync.area_path import AUTO_DEFAULT_AREA_SEGMENT, ensure_area_path_exists
+from sync.area_path import (
+    AUTO_DEFAULT_AREA_SEGMENT,
+    area_path_exists,
+    ensure_area_path_exists,
+    render_fallback_area_path,
+)
 
 
 def test_ensure_area_path_exists_skips_when_cached() -> None:
@@ -93,3 +98,22 @@ def test_ensure_area_path_exists_propagates_create_auth_error() -> None:
     cache: dict[tuple[str, str, str], bool] = {}
     with pytest.raises(AzureDevOpsAuthError):
         ensure_area_path_exists(client, "org", "proj", "AppTeam\\Snyk", cache)
+
+
+def test_render_fallback_area_path_substitutes_project() -> None:
+    assert render_fallback_area_path("{project}\\Security", "AppTeam") == "AppTeam\\Security"
+
+
+def test_area_path_exists_true_when_full_path_present() -> None:
+    client = MagicMock()
+    client.get_classification_node.return_value = {"name": "TeamA"}
+    cache: dict[tuple[str, str, str], bool] = {}
+    assert area_path_exists(client, "org", "proj", "proj\\TeamA", cache) is True
+    client.get_classification_node.assert_called_once_with("org", "proj", "TeamA")
+
+
+def test_area_path_exists_false_when_leaf_missing() -> None:
+    client = MagicMock()
+    client.get_classification_node.return_value = None
+    cache: dict[tuple[str, str, str], bool] = {}
+    assert area_path_exists(client, "org", "proj", "proj\\Missing", cache) is False

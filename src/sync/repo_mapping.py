@@ -9,9 +9,17 @@ from typing import Mapping
 
 from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig
+from integrations.azure_devops.client import WorkItemsClient
+from sync.area_path import (
+    DEFAULT_FALLBACK_AREA_PATH_TEMPLATE,
+    AreaPathExistenceCache,
+    area_path_exists,
+    render_fallback_area_path,
+)
 
 DEFAULT_REPO_MAPPING_CSV = "repo-mapping.csv"
-AUTO_DEFAULT_AREA_SEGMENT = "Snyk"
+
+_CONFIGURED_AREA_PATH_SOURCES = frozenset({"csv", "org_override", "defaults"})
 
 _GITHUB_FAMILY_ORIGINS: frozenset[str] = frozenset(
     {
@@ -144,6 +152,77 @@ class ResolvedRouting:
     csv_match: RepoMappingMatch | None = None
 
 
+@dataclass(frozen=True)
+class FinalizedAreaPath:
+    """Area path routing after optional fallback substitution."""
+
+    routing: ResolvedRouting
+    missing_configured_path: str | None = None
+
+
+def finalize_area_path_for_auto_create(
+    *,
+    client: WorkItemsClient,
+    routing: ResolvedRouting,
+    auto_create_area_path: bool,
+    fallback_template: str,
+    existence_cache: AreaPathExistenceCache,
+) -> FinalizedAreaPath:
+    """
+    Apply configured-path existence check and fallback substitution when enabled.
+
+    When ``auto_create_area_path`` is ``False``, returns ``routing`` unchanged.
+    """
+    if not auto_create_area_path:
+        return FinalizedAreaPath(routing=routing)
+
+    source = routing.area_path_source
+    if source in _CONFIGURED_AREA_PATH_SOURCES:
+        configured = str(routing.area_path or "").strip()
+        if not configured:
+            return FinalizedAreaPath(routing=routing)
+        if area_path_exists(
+            client,
+            routing.organization,
+            routing.project,
+            configured,
+            existence_cache,
+        ):
+            return FinalizedAreaPath(routing=routing)
+        fallback = render_fallback_area_path(fallback_template, routing.project)
+        return FinalizedAreaPath(
+            routing=ResolvedRouting(
+                organization=routing.organization,
+                project=routing.project,
+                area_path=fallback,
+                assignee=routing.assignee,
+                ado_target_source=routing.ado_target_source,
+                area_path_source="auto_fallback",
+                assignee_from_csv=routing.assignee_from_csv,
+                csv_match=routing.csv_match,
+            ),
+            missing_configured_path=configured,
+        )
+
+    if source == "auto_default":
+        rendered = render_fallback_area_path(fallback_template, routing.project)
+        if rendered != (routing.area_path or ""):
+            return FinalizedAreaPath(
+                routing=ResolvedRouting(
+                    organization=routing.organization,
+                    project=routing.project,
+                    area_path=rendered,
+                    assignee=routing.assignee,
+                    ado_target_source=routing.ado_target_source,
+                    area_path_source="auto_default",
+                    assignee_from_csv=routing.assignee_from_csv,
+                    csv_match=routing.csv_match,
+                ),
+            )
+
+    return FinalizedAreaPath(routing=routing)
+
+
 class RepoMappingIndex:
     """In-memory lookup for repo-mapping CSV rows."""
 
@@ -256,13 +335,14 @@ def resolve_routing(
     snyk_project_name: str,
     boards: AzureBoardsConfig,
     global_defaults_area_path: str | None = None,
+    fallback_area_path_template: str | None = None,
 ) -> ResolvedRouting:
     """
     Resolve effective ADO target, area path, and assignee for one issue.
 
     ADO org/project precedence: CSV row → merged config ``organization`` / ``project``.
     Area path precedence: CSV row → merged ``defaults.area_path`` → when
-    ``defaults.auto_create_area_path`` is ``True``, ``{project}\\Snyk`` → unset.
+    ``defaults.auto_create_area_path`` is ``True``, rendered fallback template → unset.
     Assignee: non-empty CSV assignee when row matches; else template rules.
     """
     config_org = boards.organization.strip() or boards.defaults.organization.strip()
@@ -303,7 +383,10 @@ def resolve_routing(
         )
 
     if boards.defaults.auto_create_area_path and config_project:
-        fallback = f"{config_project}\\{AUTO_DEFAULT_AREA_SEGMENT}"
+        template = (
+            fallback_area_path_template or DEFAULT_FALLBACK_AREA_PATH_TEMPLATE
+        )
+        fallback = render_fallback_area_path(template, config_project)
         return ResolvedRouting(
             organization=config_org,
             project=config_project,

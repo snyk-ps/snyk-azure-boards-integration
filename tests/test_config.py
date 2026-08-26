@@ -788,6 +788,90 @@ def test_org_mapping_override_auto_create_area_path(tmp_path: Path) -> None:
     assert boards.defaults.auto_create_area_path is True
 
 
+def test_load_app_config_auto_create_fallback_template(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    auto_create_fallback_area_path: '{project}\\Security'\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.auto_create_fallback_area_path == "{project}\\Security"
+
+
+def test_load_app_config_rejects_invalid_fallback_template(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n  defaults:\n    auto_create_fallback_area_path: Snyk\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="auto_create_fallback_area_path"):
+        load_app_config(config_path=str(p), cli_group_id=None)
+
+
+def test_load_app_config_fallback_template_env_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    auto_create_fallback_area_path: '{project}\\TeamA'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH",
+        "{project}\\TeamB",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    assert c.azure_boards.defaults.auto_create_fallback_area_path == "{project}\\TeamB"
+
+
+def test_load_app_config_ado_targets_fallback_template(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  ado_targets:\n"
+        "    - organization: myado\n"
+        "      project: PaymentsProject\n"
+        "      auto_create_fallback_area_path: '{project}\\Security'\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id=None)
+    profile = c.azure_boards.ado_targets[0]
+    assert profile.auto_create_fallback_area_path == "{project}\\Security"
+
+
+def test_org_mapping_override_auto_create_fallback_template(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "azure_boards:\n"
+        "  defaults:\n"
+        "    auto_create_fallback_area_path: '{project}\\Snyk'\n"
+        "  org_mappings:\n"
+        "    - organization: ado-o\n"
+        "      project: ado-p\n"
+        "      snyk_org_id: org-uuid\n"
+        "      snyk_org_slug: slug\n"
+        "      overrides:\n"
+        "        auto_create_fallback_area_path: '{project}\\Triage'\n",
+        encoding="utf-8",
+    )
+    c = load_app_config(config_path=str(p), cli_group_id="g")
+    from sync.effective import boards_for_org_mapping, resolve_effective_fallback_template
+
+    boards = boards_for_org_mapping(c, c.azure_boards.org_mappings[0])
+    template = resolve_effective_fallback_template(
+        defaults=boards.defaults,
+        ado_profile=None,
+        org_mapping=c.azure_boards.org_mappings[0],
+        org_override_applies=True,
+    )
+    assert template == "{project}\\Triage"
+
+
 def test_load_app_config_repo_mapping_csv_and_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     p = tmp_path / "c.yaml"
     p.write_text(

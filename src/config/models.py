@@ -34,8 +34,10 @@ class AzureBoardsDefaults:
     sync_included_snyk_origins: tuple[str, ...] | None = None
     #: Default Azure DevOps area path when no ``repo-mapping.csv`` row matches.
     area_path: str | None = None
-    #: When ``True``, ensure area paths exist in ADO and synthesize ``{project}\\Snyk`` fallback.
+    #: When ``True``, ensure fallback area paths exist in ADO and synthesize when unset/missing.
     auto_create_area_path: bool = False
+    #: Template for fallback area path when ``auto_create_area_path`` is ``True`` (``{project}``).
+    auto_create_fallback_area_path: str | None = None
 
 
 @dataclass
@@ -60,6 +62,7 @@ class AdoTargetProfile:
     work_item_state_closed: str | None = None
     work_item_description_field: str | None = None
     work_item_template: dict[str, Any] = field(default_factory=dict)
+    auto_create_fallback_area_path: str | None = None
 
 
 class AdoTargetIndex:

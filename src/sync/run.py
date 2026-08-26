@@ -22,13 +22,20 @@ from observability.integration_audit import log_missing_mapped_work_item, log_sy
 from observability.sync_context import get_sync_run_id, reset_sync_run_id, set_sync_run_id
 from snyk.client import GroupIssueListParams, IssuesClient
 
-from sync.area_path import AreaPathEnsureCache, ensure_area_path_exists
+from sync.area_path import (
+    DEFAULT_FALLBACK_AREA_PATH_TEMPLATE,
+    AreaPathEnsureCache,
+    AreaPathExistenceCache,
+    ensure_area_path_exists,
+    render_fallback_area_path,
+)
 from sync.azure_batch import batch_get_work_items
 from sync.description_field import DescriptionFieldResolver, warm_description_fields_for_sync
 from sync.effective import (
     EffectiveWorkItemConfig,
     boards_for_org_mapping,
     effective_snyk_org_slug,
+    resolve_effective_fallback_template,
     resolve_effective_work_item_config,
 )
 from sync.enrichment import enrich_issue_record
@@ -50,7 +57,14 @@ from sync.lifecycle import (
 )
 from sync.origin_filter import classify_origin_for_allowlist
 from sync.patch_build import build_create_patch, build_update_patch
-from sync.repo_mapping import RepoMappingIndex, ResolvedRouting, load_repo_mapping_index, resolve_routing
+from sync.repo_mapping import (
+    FinalizedAreaPath,
+    RepoMappingIndex,
+    ResolvedRouting,
+    finalize_area_path_for_auto_create,
+    load_repo_mapping_index,
+    resolve_routing,
+)
 from sync.validate import validate_sync_config, validate_sync_environment
 
 LOGGER = logging.getLogger(__name__)
@@ -116,6 +130,125 @@ def _format_area_path_move_comment(*, previous: str, new: str) -> str:
     return f"Snyk sync moved work item area path from '{prev_display}' to '{new}'."
 
 
+def _format_fallback_area_path_comment(
+    *,
+    fallback_path: str,
+    area_path_source: str,
+    configured_path: str | None = None,
+) -> str:
+    if area_path_source == "auto_fallback" and configured_path:
+        return (
+            f"Snyk sync assigned fallback area path '{fallback_path}' because configured "
+            f"area path '{configured_path}' was not found in Azure DevOps."
+        )
+    return (
+        f"Snyk sync assigned default fallback area path '{fallback_path}' "
+        "(no area path configured)."
+    )
+
+
+def _org_mapping_matches_target(
+    org_mapping: OrgMapping | None,
+    *,
+    organization: str,
+    project: str,
+) -> bool:
+    if org_mapping is None:
+        return False
+    return (
+        org_mapping.organization.strip() == organization.strip()
+        and org_mapping.project.strip() == project.strip()
+    )
+
+
+def _prepare_issue_routing(
+    *,
+    repo_index: RepoMappingIndex,
+    snyk_project_origin: str,
+    snyk_project_name: str,
+    boards: AzureBoardsConfig,
+    global_defaults_area_path: str | None,
+    org_mapping: OrgMapping | None,
+    ado_target_index: AdoTargetIndex,
+    wit_client: WorkItemsClient,
+    area_path_existence_cache: AreaPathExistenceCache,
+    log: logging.Logger,
+    issue_key: str,
+) -> FinalizedAreaPath:
+    """Resolve routing, apply fallback template precedence, and substitute when missing."""
+    routing = resolve_routing(
+        index=repo_index,
+        snyk_project_origin=snyk_project_origin,
+        snyk_project_name=snyk_project_name,
+        boards=boards,
+        global_defaults_area_path=global_defaults_area_path,
+        fallback_area_path_template=DEFAULT_FALLBACK_AREA_PATH_TEMPLATE,
+    )
+    fallback_template = resolve_effective_fallback_template(
+        defaults=boards.defaults,
+        ado_profile=ado_target_index.lookup(routing.organization, routing.project),
+        org_mapping=org_mapping,
+        org_override_applies=_org_mapping_matches_target(
+            org_mapping,
+            organization=routing.organization,
+            project=routing.project,
+        ),
+    )
+    if routing.area_path_source == "auto_default":
+        routing = ResolvedRouting(
+            organization=routing.organization,
+            project=routing.project,
+            area_path=render_fallback_area_path(fallback_template, routing.project),
+            assignee=routing.assignee,
+            ado_target_source=routing.ado_target_source,
+            area_path_source="auto_default",
+            assignee_from_csv=routing.assignee_from_csv,
+            csv_match=routing.csv_match,
+        )
+    finalized = finalize_area_path_for_auto_create(
+        client=wit_client,
+        routing=routing,
+        auto_create_area_path=boards.defaults.auto_create_area_path,
+        fallback_template=fallback_template,
+        existence_cache=area_path_existence_cache,
+    )
+    if finalized.missing_configured_path:
+        log.info(
+            "sync area path fallback issue=%s configured_area_path=%s effective_area_path=%s",
+            issue_key,
+            finalized.missing_configured_path,
+            finalized.routing.area_path,
+        )
+    return finalized
+
+
+def _add_fallback_area_path_comment_if_needed(
+    wit_client: WorkItemsClient,
+    organization: str,
+    project: str,
+    work_item_id: str,
+    *,
+    routing: ResolvedRouting,
+    missing_configured_path: str | None,
+) -> None:
+    source = routing.area_path_source
+    if source not in ("auto_default", "auto_fallback"):
+        return
+    area = str(routing.area_path or "").strip()
+    if not area:
+        return
+    wit_client.add_work_item_comment(
+        organization,
+        project,
+        work_item_id,
+        _format_fallback_area_path_comment(
+            fallback_path=area,
+            area_path_source=source,
+            configured_path=missing_configured_path,
+        ),
+    )
+
+
 def _format_routing_migration_recreate_comment(
     *,
     prior_work_item_id: str,
@@ -173,9 +306,12 @@ def _ensure_routing_area_path_if_enabled(
     """
     Ensure the routing area path exists when ``auto_create_area_path`` is enabled.
 
+    Only ensures fallback-resolved paths (``auto_default`` / ``auto_fallback``).
     Returns ``False`` when ensure fails and the caller should skip the issue.
     """
     if not boards.defaults.auto_create_area_path:
+        return True
+    if routing.area_path_source not in ("auto_default", "auto_fallback"):
         return True
     area = str(routing.area_path or "").strip()
     if not area:
@@ -262,6 +398,7 @@ def _create_replacement_work_item(
     boards: AzureBoardsConfig,
     area_path_ensure_cache: AreaPathEnsureCache,
     log: logging.Logger,
+    missing_configured_path: str | None = None,
 ) -> str:
     """
     Create a new Azure Boards work item, upsert mapping, optional audit on prior id.
@@ -335,6 +472,14 @@ def _create_replacement_work_item(
             prior_work_item_url=prior_url,
         )
         wit_client.add_work_item_comment(ado_org, ado_proj, new_wid, text)
+    _add_fallback_area_path_comment_if_needed(
+        wit_client,
+        ado_org,
+        ado_proj,
+        new_wid,
+        routing=routing,
+        missing_configured_path=missing_configured_path,
+    )
     return new_wid
 
 
@@ -416,6 +561,7 @@ def _run_sync_body(
     repo_index = load_repo_mapping_index(config)
     global_area_path = ab.defaults.area_path
     area_path_ensure_cache: AreaPathEnsureCache = {}
+    area_path_existence_cache: AreaPathExistenceCache = {}
     description_fields = DescriptionFieldResolver(wit_client)
     warm_description_fields_for_sync(config, description_fields)
 
@@ -471,6 +617,7 @@ def _run_sync_body(
                 repo_index=repo_index,
                 global_defaults_area_path=global_area_path,
                 area_path_ensure_cache=area_path_ensure_cache,
+                area_path_existence_cache=area_path_existence_cache,
             )
         log.info("sync run finished (org_mappings mode)")
         return 0
@@ -519,6 +666,7 @@ def _run_sync_body(
         repo_index=repo_index,
         global_defaults_area_path=global_area_path,
         area_path_ensure_cache=area_path_ensure_cache,
+        area_path_existence_cache=area_path_existence_cache,
     )
     log.info("sync run finished for group_id=%s", group_id)
     return 0
@@ -547,6 +695,7 @@ def _run_sync_batch(
     repo_index: RepoMappingIndex,
     global_defaults_area_path: str | None,
     area_path_ensure_cache: AreaPathEnsureCache,
+    area_path_existence_cache: AreaPathExistenceCache,
 ) -> None:
     planned: list[tuple[dict[str, Any], tuple[str, str, str, str], MappingRow | None]] = []
     for rec in issues:
@@ -606,6 +755,7 @@ def _run_sync_batch(
                 repo_index=repo_index,
                 global_defaults_area_path=global_defaults_area_path,
                 area_path_ensure_cache=area_path_ensure_cache,
+                area_path_existence_cache=area_path_existence_cache,
             )
         except Exception as exc:  # noqa: BLE001 — per-issue isolation
             log.error("sync skip issue_id=%s: %s", iid, exc)
@@ -637,6 +787,7 @@ def _sync_one_issue(
     repo_index: RepoMappingIndex,
     global_defaults_area_path: str | None,
     area_path_ensure_cache: AreaPathEnsureCache,
+    area_path_existence_cache: AreaPathExistenceCache,
 ) -> None:
     gid, oid, pid, iid = natural_key
     rec = enrich_issue_record(
@@ -720,13 +871,21 @@ def _sync_one_issue(
         )
         return
 
-    routing = resolve_routing(
-        index=repo_index,
+    finalized_routing = _prepare_issue_routing(
+        repo_index=repo_index,
         snyk_project_origin=snyk_po,
         snyk_project_name=snyk_pn,
         boards=boards,
         global_defaults_area_path=global_defaults_area_path,
+        org_mapping=org_mapping,
+        ado_target_index=ado_target_index,
+        wit_client=wit_client,
+        area_path_existence_cache=area_path_existence_cache,
+        log=log,
+        issue_key=issue_key,
     )
+    routing = finalized_routing.routing
+    missing_configured_path = finalized_routing.missing_configured_path
     effective_org = routing.organization
     effective_proj = routing.project
     effective_wit = resolve_effective_work_item_config(
@@ -824,6 +983,7 @@ def _sync_one_issue(
                 boards=boards,
                 area_path_ensure_cache=area_path_ensure_cache,
                 log=log,
+                missing_configured_path=missing_configured_path,
             )
             return
 
@@ -942,6 +1102,14 @@ def _sync_one_issue(
             excluded=False,
             exclusion_reason="",
         )
+        _add_fallback_area_path_comment_if_needed(
+            wit_client,
+            effective_org,
+            effective_proj,
+            wid,
+            routing=routing,
+            missing_configured_path=missing_configured_path,
+        )
         return
 
     assert row is not None
@@ -1044,6 +1212,14 @@ def _sync_one_issue(
                             new=effective_area,
                         ),
                     )
+                    _add_fallback_area_path_comment_if_needed(
+                        wit_client,
+                        stored_org,
+                        stored_proj,
+                        prev_wid.strip(),
+                        routing=routing,
+                        missing_configured_path=missing_configured_path,
+                    )
                 if prev_snyk is not None and prev_snyk != new_status:
                     text = _format_audit_comment(
                         old_status=prev_snyk,
@@ -1091,6 +1267,7 @@ def _sync_one_issue(
             boards=boards,
             area_path_ensure_cache=area_path_ensure_cache,
             log=log,
+            missing_configured_path=missing_configured_path,
         )
         return
 
@@ -1175,6 +1352,7 @@ def _sync_one_issue(
             boards=boards,
             area_path_ensure_cache=area_path_ensure_cache,
             log=log,
+            missing_configured_path=missing_configured_path,
         )
         return
 
@@ -1239,6 +1417,14 @@ def _sync_one_issue(
             stored_proj,
             wid,
             _format_area_path_move_comment(previous=current_area, new=effective_area),
+        )
+        _add_fallback_area_path_comment_if_needed(
+            wit_client,
+            stored_org,
+            stored_proj,
+            wid,
+            routing=routing,
+            missing_configured_path=missing_configured_path,
         )
 
     if prev_snyk is not None and prev_snyk != new_status:

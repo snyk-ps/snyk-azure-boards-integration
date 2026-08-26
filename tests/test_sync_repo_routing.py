@@ -574,6 +574,58 @@ def test_run_sync_auto_default_area_path_with_ensure(
     patches = wit.create_work_item.call_args[0][3]
     area_ops = [o for o in patches if o.get("path") == "/fields/System.AreaPath"]
     assert area_ops and area_ops[0]["value"] == "ado-p\\Snyk"
+    wit.add_work_item_comment.assert_called_once()
+    assert "default fallback area path" in wit.add_work_item_comment.call_args[0][3]
+
+
+def test_run_sync_csv_missing_area_path_uses_fallback(
+    tmp_path: Path,
+    env_pat: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "repo-mapping.csv"
+    csv_path.write_text(
+        "Source,GitHub Org/ADO Project,Repo Name,ADO Organization,Area Path\n"
+        "github,my-org,payments-api,ado-o,MyProject\\Missing\n",
+        encoding="utf-8",
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        _cfg_yaml(repo_csv="repo-mapping.csv", auto_create_area_path=True),
+        encoding="utf-8",
+    )
+    cfg = load_app_config(config_path=str(cfg_path), cli_group_id=None)
+
+    db = tmp_path / "m.sqlite"
+    store = SqliteMappingStore(database_path=str(db))
+    issues = IssuesClient(token="t")
+    wit = MagicMock(spec=WorkItemsClient)
+    wit.list_work_item_type_field_names.return_value = ["System.Description"]
+    wit.get_classification_node.return_value = None
+    wit.create_work_item.return_value = {"work_item_id": "1", "work_item_status": "New"}
+
+    monkeypatch.setattr(issues, "iter_org_issues", lambda *a, **k: iter([_open_issue()]))
+    monkeypatch.setattr(
+        issues,
+        "get_org_project",
+        lambda org, pid: {"name": "my-org/payments-api", "origin": "github"},
+    )
+    monkeypatch.setattr("sync.run.batch_get_work_items", lambda *a, **k: {})
+
+    rc = run_sync(config=cfg, issues_client=issues, wit_client=wit, store=store)
+    assert rc == 0
+    patches = wit.create_work_item.call_args[0][3]
+    area_ops = [o for o in patches if o.get("path") == "/fields/System.AreaPath"]
+    assert area_ops and area_ops[0]["value"] == "MyProject\\Snyk"
+    wit.create_classification_node.assert_called_once_with(
+        "ado-o",
+        "MyProject",
+        None,
+        "Snyk",
+    )
+    comment = wit.add_work_item_comment.call_args[0][3]
+    assert "MyProject\\Missing" in comment
+    assert "MyProject\\Snyk" in comment
 
 
 def test_run_sync_skips_issue_when_area_path_ensure_forbidden(

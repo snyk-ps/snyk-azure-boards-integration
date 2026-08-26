@@ -2,12 +2,29 @@
 
 from __future__ import annotations
 
+from config.fallback_area_path import (
+    DEFAULT_FALLBACK_AREA_PATH_TEMPLATE,
+    render_fallback_area_path,
+    validate_fallback_area_path_template,
+)
 from integrations.azure_devops.client import WorkItemsClient
 from integrations.azure_devops.errors import AzureDevOpsClientError
 
 AUTO_DEFAULT_AREA_SEGMENT = "Snyk"
 
 AreaPathEnsureCache = dict[tuple[str, str, str], bool]
+AreaPathExistenceCache = dict[tuple[str, str, str], bool]
+
+__all__ = [
+    "AUTO_DEFAULT_AREA_SEGMENT",
+    "DEFAULT_FALLBACK_AREA_PATH_TEMPLATE",
+    "AreaPathEnsureCache",
+    "AreaPathExistenceCache",
+    "area_path_exists",
+    "ensure_area_path_exists",
+    "render_fallback_area_path",
+    "validate_fallback_area_path_template",
+]
 
 
 def _area_path_segments(full_path: str) -> list[str]:
@@ -28,6 +45,39 @@ def _classification_api_segments(full_path: str, project: str) -> list[str]:
     if segments and proj and segments[0] == proj:
         return segments[1:]
     return segments
+
+
+def area_path_exists(
+    client: WorkItemsClient,
+    organization: str,
+    project: str,
+    full_path: str,
+    cache: AreaPathExistenceCache,
+) -> bool:
+    """
+    Return whether the full configured area path exists in ADO (strict full path).
+
+    Uses Classification Nodes GET on the complete path relative to the project root.
+    """
+    org = str(organization or "").strip()
+    proj = str(project or "").strip()
+    path = str(full_path or "").strip()
+    if not org or not proj or not path:
+        return False
+
+    cache_key = (org, proj, path)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    api_segments = _classification_api_segments(path, proj)
+    if not api_segments:
+        cache[cache_key] = False
+        return False
+
+    full_api_path = "\\".join(api_segments)
+    exists = client.get_classification_node(org, proj, full_api_path) is not None
+    cache[cache_key] = exists
+    return exists
 
 
 def ensure_area_path_exists(

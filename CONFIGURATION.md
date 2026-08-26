@@ -49,7 +49,8 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `work_item_description_appendix` | string | `""` | Optional **appendix**: your own plain text, added **at the end** of the work item description **after** the auto-generated Snyk content (finding info and links). **`sync`** turns the full description into HTML for Azure DevOps; this text is **escaped** as plain text, not treated as HTML. If you omit the key or the value is only whitespace after trim, nothing extra is added. You can set a different appendix per **`org_mappings`** row via **`overrides`**. Use for runbooks or notes, **not** secrets. |
 | `work_item_template` | object | (see below) | **`tags`**, optional **`json_patch`**; see **`work_item_template`**. |
 | `area_path` | string | (omit) | Fallback **`System.AreaPath`** when no **`repo-mapping.csv`** row matches. Overridable per **`org_mappings`** row via **`overrides.area_path`**. |
-| `auto_create_area_path` | boolean | `false` | When **`true`**, **`sync`** ensures effective area paths exist in Azure DevOps before create/update, and when no area path is otherwise configured synthesizes **`{project}\Snyk`** as the fallback. Overridable per **`org_mappings`** row via **`overrides.auto_create_area_path`**. Requires optional project **Create child nodes** permissions — see **[Azure DevOps PAT § Optional — auto-create area paths](CONFIGURATION.md#optional--auto-create-area-paths)**. |
+| `auto_create_area_path` | boolean | `false` | When **`true`**, **`sync`** uses a **fallback area path** when none is configured or when a configured path (CSV, YAML) is **missing** in Azure DevOps (strict full-path check). Only the fallback path is auto-created — configured paths are **not** provisioned. Default fallback template: **`{project}\Snyk`**. Overridable per **`org_mappings`** via **`overrides.auto_create_area_path`**. Requires optional project **Create child nodes** permissions — see **[Azure DevOps PAT § Optional — auto-create area paths](CONFIGURATION.md#optional--auto-create-area-paths)**. |
+| `auto_create_fallback_area_path` | string | `{project}\Snyk` when **`auto_create_area_path`** is **`true`** | Template for the fallback **`System.AreaPath`** with **`{project}`** placeholder. Overridable via env **`AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH`**, per **`ado_targets[]`**, and per **`org_mappings[].overrides`**. Runtime precedence: **`ado_targets`** → **`org_mappings` overrides** → **`defaults`**. |
 
 ## `azure_boards.ado_targets` (optional)
 
@@ -64,6 +65,7 @@ Per ADO **`(organization, project)`** work item profiles for multi-project CSV r
 | `work_item_state_closed` | no | Closed state when resolving issues (e.g. **`Closed`**). |
 | `work_item_description_field` | no | Field reference name override for this ADO project/type. |
 | `work_item_template` | no | Partial template (tags, **`json_patch`**) merged with global and defaults templates. |
+| `auto_create_fallback_area_path` | no | Fallback area path template (e.g. **`{project}\Security`**) when **`auto_create_area_path`** is enabled for issues routed to this ADO project. Beats **`defaults`** and org overrides for the fallback template only. |
 
 Duplicate **`(organization, project)`** pairs are rejected at load time. When **`ado_targets`** is omitted or empty, behavior is unchanged.
 
@@ -108,7 +110,11 @@ Define one **`ado_targets`** entry for each distinct ADO **`(organization, proje
 
 **Multi-project within one Snyk org:** Keep a single **`org_mappings`** row (1:1 Snyk org baseline) and use **`repo-mapping.csv`** to route different repositories to different ADO projects. Do **not** duplicate **`snyk_org_id`** rows in YAML.
 
-**Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → when **`auto_create_area_path`** is **`true`**, **`{project}\Snyk`** → omit (ADO project default).
+**Precedence (area path):** CSV row → **`org_mappings[].overrides.area_path`** → **`defaults.area_path`** → when **`auto_create_area_path`** is **`true`**, rendered **`auto_create_fallback_area_path`** (default **`{project}\Snyk`**) → omit (ADO project default). When a configured path from CSV or YAML is **missing** in Azure DevOps and **`auto_create_area_path`** is **`true`**, **`sync`** substitutes the fallback template instead of creating the configured segments.
+
+**Fallback template precedence:** Matching **`ado_targets`** → **`org_mappings[].overrides.auto_create_fallback_area_path`** (same ADO target) → **`defaults.auto_create_fallback_area_path`** (env **`AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH`** may override **`defaults`** at load).
+
+**Migration note:** Prior versions auto-created **any** effective area path when **`auto_create_area_path`** was enabled. Current behavior only auto-creates the **fallback** path. Pre-create CSV/YAML area paths in Azure DevOps if you still need those exact paths.
 
 **PAT scope:** **`AZURE_DEVOPS_PAT`** must authorize every **ADO Organization** and **project** (first **Area Path** segment) listed in the CSV.
 
@@ -126,7 +132,7 @@ Define one **`ado_targets`** entry for each distinct ADO **`(organization, proje
 | `project` | yes | Azure DevOps project for this row. |
 | `snyk_org_id` | yes (for org-scoped listing) | Snyk organization UUID for this target. |
 | `snyk_org_slug` | yes | Non-empty slug for **`app.snyk.io`** links in work items. |
-| `overrides` | no | Partial **`defaults`** override (severity, origins, **`work_item_*`**, **`area_path`**, **`work_item_template`**, etc.). |
+| `overrides` | no | Partial **`defaults`** override (severity, origins, **`work_item_*`**, **`area_path`**, **`auto_create_fallback_area_path`**, **`work_item_template`**, etc.). |
 
 **Missing mapped work item in Azure DevOps:** If the mapping store holds a **`work_item_id`** that no longer exists in Azure DevOps (deleted manually or after a migration), **`sync`** logs **`missing_mapped_work_item`** with **`prior_work_item_id`** and **`action`**. For **open** Snyk findings it **recreates** a work item (when **`create_new_work_items`** is **true** and other create gates pass), updates the mapping, and adds an audit comment referencing the prior id. For **resolved** or **ignored** findings it **skips** Azure DevOps mutation (no recreate). This avoids a single stale id aborting the entire sync run.
 
@@ -255,6 +261,7 @@ Tokens must match exactly; the catalog aligns with [Snyk Origin](https://docs.sn
 | `AZURE_BOARDS_ORGANIZATION` | Overrides `azure_boards.defaults.organization` when set to a non-empty value (non-secret Azure DevOps org name). |
 | `AZURE_BOARDS_PROJECT` | Overrides `azure_boards.defaults.project` when set to a non-empty value (non-secret Azure DevOps project name or id). |
 | `REPO_MAPPING_CSV_PATH` | Overrides `azure_boards.repo_mapping_csv` (path to **`repo-mapping.csv`**; relative paths resolve beside the loaded YAML config directory). |
+| `AZURE_BOARDS_AUTO_CREATE_FALLBACK_AREA_PATH` | Overrides `azure_boards.defaults.auto_create_fallback_area_path` when **`auto_create_area_path`** is enabled (template with **`{project}`** placeholder; e.g. **`{project}\Security`**). |
 | `AZURE_DEVOPS_PAT` | **Secret:** Azure DevOps personal access token (not read from YAML or CLI flags). |
 | `MAPPING_STORE` | Overrides `mapping_store` (`sqlite` or `azure_table`). |
 | `MAPPING_STORE_SQLITE_PATH` | Overrides `sqlite_path` for the SQLite mapping database (CLI `--mapping-store-sqlite-path` wins when set). |
@@ -287,14 +294,14 @@ If your dialog uses different labels, pick the option that allows both reading a
 
 ### Optional — auto-create area paths
 
-When **`azure_boards.defaults.auto_create_area_path`** (or a per-row **`org_mappings[].overrides.auto_create_area_path`**) is **`true`**, **`sync`** may create missing area path nodes via the Azure DevOps Classification Nodes API before assigning work items. The base **Work Items: Read & write** PAT scope above is still sufficient at the token level.
+When **`azure_boards.defaults.auto_create_area_path`** (or a per-row **`org_mappings[].overrides.auto_create_area_path`**) is **`true`**, **`sync`** uses a **fallback area path** when no path is configured or when a configured path (CSV, YAML) is **missing** in Azure DevOps. Only the **fallback** path (default template **`{project}\Snyk`**, overridable via **`auto_create_fallback_area_path`**) is auto-created via the Classification Nodes API — configured CSV/YAML paths are **not** provisioned. **`sync`** logs and adds a work item audit comment when the fallback is used. The base **Work Items: Read & write** PAT scope above is still sufficient at the token level.
 
 Additionally, the PAT user needs **project permissions** to manage the area hierarchy:
 
 - **Create child nodes** = **Allow** on the parent area node(s) under which new segments will be added (**Project Settings** → **Project configuration** → **Areas** → select a node → **Security**).
 - Some organizations require **Project Administrators** to add areas directly under the project root node.
 
-These permissions are **optional** — only required when **`auto_create_area_path`** is enabled. If you pre-create area paths manually (or set explicit **`area_path`** values that already exist), leave **`auto_create_area_path`** at **`false`** (default) and no extra permissions are needed.
+These permissions are **optional** — only required when **`auto_create_area_path`** is enabled and **`sync`** must create the **fallback** area path. If you pre-create area paths manually (or set explicit **`area_path`** values that already exist), leave **`auto_create_area_path`** at **`false`** (default) and no extra permissions are needed.
 
 ## The `sync` command
 

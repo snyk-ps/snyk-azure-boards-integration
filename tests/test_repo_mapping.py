@@ -5,13 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from unittest.mock import MagicMock
 
 from config.errors import ConfigError
 from config.models import AppConfig, AzureBoardsConfig, AzureBoardsDefaults, SnykConfig
+from sync.area_path import AUTO_DEFAULT_AREA_SEGMENT
 from sync.repo_mapping import (
-    AUTO_DEFAULT_AREA_SEGMENT,
+    FinalizedAreaPath,
     RepoMappingIndex,
     RepoMappingMatch,
+    finalize_area_path_for_auto_create,
     load_repo_mapping_index,
     parse_area_path_for_project,
     parse_owner_repo,
@@ -345,3 +348,68 @@ def test_repo_mapping_csv_optional_taxonomy_columns(tmp_path: Path) -> None:
     assert match.work_item_type == "Bug"
     assert match.work_item_state_active == "Active"
     assert match.csv_tags == ("TeamA",)
+
+
+def test_finalize_area_path_substitutes_when_configured_missing() -> None:
+    client = MagicMock()
+    client.get_classification_node.return_value = None
+    routing = resolve_routing(
+        index=RepoMappingIndex(
+            {
+                ("github", "my-org", "payments-api"): RepoMappingMatch(
+                    organization="ado-o",
+                    project="Proj",
+                    area_path="Proj\\Missing",
+                    assignee="",
+                ),
+            },
+        ),
+        snyk_project_origin="github",
+        snyk_project_name="my-org/payments-api",
+        boards=AzureBoardsConfig(
+            defaults=AzureBoardsDefaults(auto_create_area_path=True),
+        ),
+    )
+    finalized = finalize_area_path_for_auto_create(
+        client=client,
+        routing=routing,
+        auto_create_area_path=True,
+        fallback_template="{project}\\Snyk",
+        existence_cache={},
+    )
+    assert isinstance(finalized, FinalizedAreaPath)
+    assert finalized.routing.area_path == "Proj\\Snyk"
+    assert finalized.routing.area_path_source == "auto_fallback"
+    assert finalized.missing_configured_path == "Proj\\Missing"
+
+
+def test_finalize_area_path_keeps_existing_configured_path() -> None:
+    client = MagicMock()
+    client.get_classification_node.return_value = {"name": "TeamA"}
+    routing = resolve_routing(
+        index=RepoMappingIndex(
+            {
+                ("github", "my-org", "payments-api"): RepoMappingMatch(
+                    organization="ado-o",
+                    project="Proj",
+                    area_path="Proj\\TeamA",
+                    assignee="",
+                ),
+            },
+        ),
+        snyk_project_origin="github",
+        snyk_project_name="my-org/payments-api",
+        boards=AzureBoardsConfig(
+            defaults=AzureBoardsDefaults(auto_create_area_path=True),
+        ),
+    )
+    finalized = finalize_area_path_for_auto_create(
+        client=client,
+        routing=routing,
+        auto_create_area_path=True,
+        fallback_template="{project}\\Snyk",
+        existence_cache={},
+    )
+    assert finalized.routing.area_path == "Proj\\TeamA"
+    assert finalized.routing.area_path_source == "csv"
+    client.create_classification_node.assert_not_called()

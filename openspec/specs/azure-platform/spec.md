@@ -1,5 +1,7 @@
 # Azure platform — runtime, state, secrets, operator config
 
+## Purpose
+
 Recommended Azure services and runtime behavior for the Snyk–Azure Boards integration. Cross-reference **P2-FR-*** in `../sync-lifecycle/spec.md` where cited.
 
 ## Major components
@@ -73,7 +75,9 @@ Either pattern uses **DefaultAzureCredential** (or equivalent) for access; permi
 
 **Applying changes:** After the file is updated in **Azure Files** or **Blob**, operators **restart** the Container App or roll a **new revision** so the process **loads configuration at startup**. Hot-reload is out of scope unless added later. For safer rollback without Git, enable **Azure Files share snapshots** and/or **Blob versioning** as an operational practice.
 
-## Requirements (mapping persistence)
+## Requirements
+
+The requirements below cover **mapping persistence**.
 
 ### Requirement: Mapping row schema and logical identity
 

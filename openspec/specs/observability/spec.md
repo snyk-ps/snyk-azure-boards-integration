@@ -1,5 +1,7 @@
 # Observability — health, logging, alerting
 
+## Purpose
+
 Normative requirements for monitoring, transaction logging, and latency detection. Complements Azure platform deployment details in `../azure-platform/spec.md`.
 
 ## Functional requirements
@@ -27,12 +29,15 @@ The application SHALL emit structured audit events on the Python logger named **
 - **Availability / authentication alert:** A **log search alert** on **`integration_http`** records whose **`error`** contains **`Authentication Failed`** (or equivalent **401**/**403** handling), e.g. more than **three** matches in **ten** minutes.
 
 ---
+## Requirements
 
-## Normative requirements (P2-FR-6.x)
+The requirements below are the **normative** statements for **P2-FR-6.x**.
 
 ### Requirement: Integration HTTP audit logs (P2-FR-6.2)
 
 For **P2-FR-6.2**, the application SHALL emit **one** audit log record per **logical** outbound HTTP request to the **Snyk REST Issues API** and **Azure DevOps Work Item Tracking REST API** at **terminal outcome** (after the respective client’s retry policy for that call concludes—success, terminal HTTP error, or transport failure). Each record SHALL include: **UTC** timestamp, **HTTP method**, **HTTP status code** or explicit **transport** failure class, **elapsed duration**, an **integration** discriminator identifying **Snyk** vs **Azure DevOps**, a **safe request target** (host and path pattern without secrets—no `Authorization` header values, no PAT, no raw tokens in URLs), optional **`sync_run_id`** when a sync run is active, and **non-secret** error detail when the attempt fails.
+
+For **Azure DevOps** terminal **4xx** and **5xx** outcomes, the **error** field SHALL carry the bounded, redacted diagnostic derived from the Azure DevOps error envelope per **`azure-devops-client`** whenever such a diagnostic can be derived. When no diagnostic can be derived, the record SHALL still be emitted with the status code and MAY omit the error field. Records for **`429`** retry-budget exhaustion and transport failures SHALL retain their existing error detail.
 
 The **`integration_audit`** logger SHALL emit each audit record as part of the **NDJSON** contract (**Requirement: NDJSON structured CLI logging (P2-FR-6.x operator usability)**): the fields listed above (including **`event`:** **`integration_http`**) SHALL appear as a **JSON object** under the **`record`** key of a **single-line** JSON log entry written to **standard output**, with **UTC** wall time in the envelope’s **`timestamp`** field (RFC 3339 with **`Z`**).
 
@@ -46,7 +51,20 @@ The **`integration_audit`** logger SHALL emit each audit record as part of the *
 - **WHEN** the Azure DevOps client receives **401** or **403** on a WIT request
 - **THEN** logs SHALL contain an audit record with that status and **SHALL NOT** include the PAT or `Authorization` material
 
----
+#### Scenario: Failed Azure DevOps mutation is audited with cause
+
+- **WHEN** an Azure DevOps work item create or update concludes with a terminal **400** carrying an error envelope
+- **THEN** the **`integration_http`** record SHALL include the **400** status and a non-secret error value naming the Azure DevOps cause
+
+#### Scenario: Operator filters failed Boards calls by cause
+
+- **WHEN** an operator queries **`integration_http`** records where the **integration** discriminator identifies Azure DevOps and the status is **400**
+- **THEN** the returned records SHALL expose an error field sufficient to group failures by cause without reproducing the request
+
+#### Scenario: Undeterminable cause still audits the failure
+
+- **WHEN** an Azure DevOps request concludes with a terminal **4xx** whose body yields no derivable diagnostic
+- **THEN** exactly one **`integration_http`** record SHALL still be emitted with method, status, duration, and safe target
 
 ### Requirement: Sync duration summary and UTC CLI logging (P2-FR-6.3)
 
@@ -144,3 +162,4 @@ The record MAY include **`sync_run_id`** when a sync run is active. The record S
 
 - **WHEN** the operator deploys a staleness alert per the README
 - **THEN** absence of successful sync summary logs beyond **N**× the schedule SHALL be detectable via the documented query pattern
+

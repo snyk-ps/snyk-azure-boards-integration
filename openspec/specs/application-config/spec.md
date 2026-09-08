@@ -1,6 +1,9 @@
 # Application configuration — YAML, defaults, env, CLI
 
+## Purpose
+
 Normative requirements for operator YAML configuration, loading, merge precedence, CLI wiring, and README/sample documentation.
+
 ## Requirements
 ### Requirement: YAML configuration file format
 

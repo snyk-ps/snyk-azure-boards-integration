@@ -37,4 +37,4 @@
 
 ## 6. Archive prep
 
-- [ ] 6.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/sync-fix-signal-and-ado-error-detail/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive sync-fix-signal-and-ado-error-detail`** to fold the deltas into the canonical specs.
+- [x] 6.1 Merge **`openspec/specs/`** only when archiving: do **not** copy or merge **`openspec/changes/sync-fix-signal-and-ado-error-detail/specs/*.md`** into **`openspec/specs/`** during implementation; run **`openspec archive sync-fix-signal-and-ado-error-detail`** to fold the deltas into the canonical specs.

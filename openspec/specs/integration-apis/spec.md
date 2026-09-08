@@ -1,5 +1,7 @@
 # Integration APIs — Snyk and Azure DevOps
 
+## Purpose
+
 REST API contracts used by the synchronization job. **Azure DevOps Services (cloud)** at `dev.azure.com` unless otherwise stated.
 
 ## Snyk REST API reference (Issues)

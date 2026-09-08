@@ -73,9 +73,9 @@ Azure DevOps error envelope (WIT REST):
 Extraction lives in **`src/integrations/azure_devops/`** as a total helper:
 
 - Read the body from the **`HTTPError`** once, decode as UTF-8 with replacement, parse JSON.
-- Prefer the envelope **`message`**; when absent, fall back to a short excerpt of the decoded body.
+- Use the envelope **`message`** only. When the body is not the documented envelope, or carries no usable **`message`**, return nothing rather than echoing arbitrary response content into logs.
 - Prepend **`typeKey`** when present, producing search-friendly detail such as **`TF401320: <message>`**.
-- **Truncate** to a documented maximum of **512** characters with an explicit truncation marker.
+- **Truncate** to a documented maximum of **480** characters with an explicit truncation marker. The bound sits below the existing **500**-character clamp that **`log_integration_http`** applies to **`error`** values, so the marker survives into the emitted record.
 - **Redact** credential-shaped content before emission, reusing the patterns already applied for safe-target construction.
 - On any decoding, parsing, or shape failure, return **`None`** and degrade to the current status-only message. Extraction SHALL NOT raise and SHALL NOT change which exception class the status code selects.
 
@@ -86,6 +86,8 @@ Wiring:
 | Terminal **4xx**/**5xx** **`log_integration_http`** | pass **`error=<detail>`** |
 | **`_raise_http`** | message becomes **`Azure DevOps API HTTP error {code}: {detail}`** when detail is available; unchanged when not |
 | **`429`** exhausted, **`URLError`**, **`OSError`** | unchanged (already carry **`error=`**) |
+
+**`401`**/**`403`** keep their existing audit **`error`** value of **`Authentication Failed (HTTP {code})`**, which **`log_integration_http`** substitutes unconditionally and on which operators already alert. The redacted diagnostic still reaches the raised exception message for those statuses, so triage gains the Azure DevOps text without disturbing the alerting contract.
 
 The body is read only in the terminal branch, after the **429** and **5xx** GET-recovery paths have already taken their **`continue`**, so no retry path consumes a stream it still needs.
 

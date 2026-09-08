@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from snyk.constants import DEFAULT_APP_ORIGIN
 from snyk.urls import normalize_app_origin
+from sync.fix_signals import FIX_SIGNAL_LABELS, true_fix_signal_keys
 
 CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
 MAX_TITLE_LEN = 255
@@ -399,31 +400,13 @@ def coordinate_path_hints(attrs: Mapping[str, Any]) -> list[str]:
     return out
 
 
-_FIX_SIGNAL_LABELS: dict[str, str] = {
-    "is_upgradeable": "Upgrade available",
-    "is_patchable": "Patch available",
-    "is_fixable_manually": "Manual remediation possible",
-    "is_fixable_snyk": "Automated fix available via Snyk",
-    "is_fixable_upstream": "Upstream fix published",
-}
-
-
 def fix_signal_labels(attrs: Mapping[str, Any]) -> list[str]:
-    """Human-readable fix signals from ``coordinates[]`` (first coordinate with flags).
+    """Human-readable fix signals unioned across all ``coordinates[]`` entries.
 
-    Omits ``is_pinnable`` (low signal for most workflows).
+    Each label appears at most once, in :data:`FIX_SIGNAL_LABELS` declaration
+    order. Omits ``is_pinnable`` (low signal for most workflows).
     """
-    coords = attrs.get("coordinates")
-    if not isinstance(coords, list) or not coords:
-        return []
-    first = coords[0]
-    if not isinstance(first, dict):
-        return []
-    lines: list[str] = []
-    for key, label in _FIX_SIGNAL_LABELS.items():
-        if first.get(key) is True:
-            lines.append(label)
-    return lines
+    return [FIX_SIGNAL_LABELS[key] for key in true_fix_signal_keys(attrs)]
 
 
 def _join_description_sections(section_blocks: list[list[str]]) -> str:

@@ -40,7 +40,7 @@ Sections may be omitted where defaults apply. A full example is in **`data/sampl
 | `severity_threshold` | `low` \| `medium` \| `high` \| `critical` | `high` | Maps to Snyk **`effective_severity_level`** filtering. Not valid under **`snyk`**. |
 | `sync_included_snyk_origins` | string (comma-separated tokens) | (omit = all) | Inclusive allowlist of Snyk project [origin](https://docs.snyk.io/snyk-platform-administration/snyk-projects#origin) values. |
 | `issues_sync_from` | `historical` or ISO-8601 timestamp | `historical` | Which issues are in scope for sync. |
-| `create_only_when_fix_available` | boolean | `false` | When `true`, skip creating work items unless a fix is indicated. |
+| `create_only_when_fix_available` | boolean | `false` | When `true`, skip creating work items unless a fix is indicated. A fix is indicated when **any** entry in the issue's **`coordinates[]`** has **any** of **`is_upgradeable`**, **`is_patchable`**, **`is_fixable_manually`**, **`is_fixable_snyk`**, or **`is_fixable_upstream`** set to `true`. **`is_pinnable`** does **not** qualify. See **[Fix-availability gate](CONFIGURATION.md#fix-availability-gate)**. |
 | `reopen_work_item_policy` | `new_work_item` \| `reopen_existing` | `new_work_item` | When a Snyk issue **reopens** (resolved or ignored back to **open**). **`new_work_item`** always creates a **new** Azure Boards work item, updates the mapping to that id, and adds an audit comment that references the previous work item when one existed. **`reopen_existing`** transitions the **existing** mapped work item back to the active state when Azure DevOps still returns it; if that work item no longer exists (**404**), **`sync`** creates a new work item and updates the mapping (same as **`new_work_item`** for that case). |
 | `work_item_type` | string | `Task` | Work item type name for **creates** only; must exist in your process. Changing this value does **not** re-type work items already linked in the mapping store — **`sync`** continues to **PATCH** those ids in place. New work items (including replacement creates when a mapped id is missing in Azure DevOps) use the **current** merged type. |
 | `work_item_state_active` | string | `New` | **`System.State`** for active findings. |
@@ -303,6 +303,28 @@ Additionally, the PAT user needs **project permissions** to manage the area hier
 
 These permissions are **optional** — only required when **`auto_create_area_path`** is enabled and **`sync`** must create the **fallback** area path. If you pre-create area paths manually (or set explicit **`area_path`** values that already exist), leave **`auto_create_area_path`** at **`false`** (default) and no extra permissions are needed.
 
+## Fix-availability gate
+
+When **`create_only_when_fix_available`** is **`true`** (settable under **`azure_boards.defaults`** or per **`org_mappings[].overrides`**), **`sync`** creates a work item only for issues where Snyk indicates an actionable fix.
+
+An issue qualifies when **at least one** entry in its **`coordinates[]`** array has **at least one** of these flags set to `true`:
+
+| Flag | Meaning |
+| ---- | ------- |
+| `is_upgradeable` | A dependency upgrade resolves the issue. |
+| `is_patchable` | A Snyk patch is available. |
+| `is_fixable_manually` | Manual remediation steps exist. |
+| `is_fixable_snyk` | Snyk can apply an automated fix. |
+| `is_fixable_upstream` | An upstream fix has been published. |
+
+**`is_pinnable`** is deliberately excluded: pin semantics do not imply an actionable upgrade path.
+
+**All** coordinates are evaluated, not just the first. A Snyk issue reachable through several introduction paths gets one **`coordinates[]`** entry per path, and the actionable flag is not guaranteed to sit on the first one.
+
+**Upgrade note.** Earlier releases inspected only the **first** coordinate, so issues whose fix signal appeared on a later path were skipped. After upgrading, expect a **one-time increase** in created work items where this setting is enabled. No backfill command is needed: a skipped issue never wrote a mapping row and Snyk list filtering applies no fix predicate, so the next scheduled **`sync`** picks it up through the normal create path and records the mapping in the same run. To reduce the resulting volume, narrow scope with **`severity_threshold`**, **`sync_included_snyk_origins`**, or **`issues_sync_from`** — the previous first-coordinate behavior is not available as an option.
+
+When **`create_only_when_fix_available`** is **`false`** (the default), fix signals do not gate creation at all.
+
 ## The `sync` command
 
 The **`sync`** command runs one reconciliation pass: it lists issues from the Snyk Issues API using **`snyk.group_id`** (**group** scope) when **`azure_boards.org_mappings`** is absent or empty; when **`org_mappings`** is non-empty, it lists issues per configured **`snyk_org_id`** (**org** scope) and routes Azure DevOps calls to each row’s **`organization`** / **`project`** with **`defaults`** merged with that row’s **`overrides`**. List calls use **`effective_severity_level`** derived from **`azure_boards.defaults.severity_threshold`**. When **`sync_included_snyk_origins`** is set (merged per mapping), only issues whose Snyk project **origin** is in that **inclusive** list receive Boards mutations; other issues are still written to the mapping store with **`excluded`** / **`exclusion_reason`**. It reads or writes rows in the mapping store and creates, updates, or closes Azure Boards work items via **`AZURE_DEVOPS_PAT`** (create/update/comment scope) for **non-excluded** issues. If you widen the allowlist (or an issue becomes eligible) and a row already exists with **no** Azure **`work_item_id`** (for example it was only ever persisted as excluded), **`sync`** **creates** a work item for **open** issues under the same rules as when no row exists (**`create_new_work_items`** and related gates still apply).
@@ -318,6 +340,30 @@ uv run python src/main.py sync --config data/sample-config.yaml
 ```
 
 Use **`--group-id`** to override `snyk.group_id` for one invocation. **`--snyk-api-base-url`** overrides the Snyk API origin for one invocation (CLI wins over **`SNYK_API_BASE_URL`** and YAML). **`--snyk-app-base-url`** overrides the Snyk web app origin for work item links (CLI wins over **`SNYK_APP_BASE_URL`** and YAML). **`--mapping-store-sqlite-path`** overrides the SQLite mapping database path. Run **`uv run python src/main.py sync --help`** for the full flag list.
+
+### Diagnosing rejected Azure DevOps calls
+
+When Azure DevOps rejects a work item create or update, **`sync`** records the reason Azure DevOps gave rather than the status code alone. The reason appears in two places:
+
+- The **`integration_audit`** **`integration_http`** record for that call, under **`record.error`**, alongside **`record.http_status`**.
+- The per-issue log line (**`sync skip issue_id=…`**), so you can tie the cause to a specific Snyk issue.
+
+The text comes from the Azure DevOps error envelope (its **`message`**, prefixed with **`typeKey`** when present) and typically names the offending field, work item type, or area path. It is truncated to 480 characters, has credential-shaped content redacted, and is omitted entirely when the response is not a recognizable Azure DevOps error envelope. Request bodies, JSON Patch payloads, and `Authorization` material are never logged.
+
+**401**/**403** records keep their **`Authentication Failed (HTTP …)`** value so existing auth alerts keep working; the Azure DevOps text for those still reaches the per-issue log line.
+
+Group failed Boards calls by cause in Log Analytics:
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where Log_s startswith "{"
+| extend J = parse_json(Log_s)
+| where J.logger == "integration_audit"
+| where J.record.event == "integration_http"
+| where J.record.integration == "azure_devops" and toint(J.record.http_status) >= 400
+| summarize failures = count() by cause = tostring(J.record.error), status = toint(J.record.http_status)
+| order by failures desc
+```
 
 ## `azure-devops-smoke` command
 

@@ -21,6 +21,7 @@ from integrations.azure_devops.constants import (
     DEFAULT_AZURE_DEVOPS_BASE_URL,
     JSON_PATCH_CONTENT_TYPE,
 )
+from integrations.azure_devops.error_detail import error_detail_from_http_error
 from integrations.azure_devops.errors import (
     AzureDevOpsApiError,
     AzureDevOpsAuthError,
@@ -72,8 +73,9 @@ def _backoff_seconds(attempt_index: int) -> float:
     return min(60.0, float(2**max(0, attempt_index)))
 
 
-def _status_message(code: int) -> str:
-    return f"Azure DevOps API HTTP error {code}"
+def _status_message(code: int, detail: str | None = None) -> str:
+    base = f"Azure DevOps API HTTP error {code}"
+    return f"{base}: {detail}" if detail else base
 
 
 class WorkItemsClient:
@@ -142,17 +144,18 @@ class WorkItemsClient:
             headers["Content-Type"] = content_type
         return headers
 
-    def _raise_http(self, exc: HTTPError) -> None:
+    def _raise_http(self, exc: HTTPError, detail: str | None = None) -> None:
         code = int(exc.code)
+        msg = _status_message(code, detail)
         if code in (401, 403):
-            raise AzureDevOpsAuthError(_status_message(code), status_code=code) from exc
+            raise AzureDevOpsAuthError(msg, status_code=code) from exc
         if code == 429:
-            raise AzureDevOpsRateLimitError(_status_message(code), status_code=code) from exc
+            raise AzureDevOpsRateLimitError(msg, status_code=code) from exc
         if 400 <= code < 500:
-            raise AzureDevOpsClientError(_status_message(code), status_code=code) from exc
+            raise AzureDevOpsClientError(msg, status_code=code) from exc
         if code >= 500:
-            raise AzureDevOpsServerError(_status_message(code), status_code=code) from exc
-        raise AzureDevOpsApiError(_status_message(code), status_code=code) from exc
+            raise AzureDevOpsServerError(msg, status_code=code) from exc
+        raise AzureDevOpsApiError(msg, status_code=code) from exc
 
     def _read_json_response(self, body: bytes) -> dict[str, Any]:
         try:
@@ -222,6 +225,9 @@ class WorkItemsClient:
                     self._sleep(_backoff_seconds(attempt_get_recovery))
                     attempt_get_recovery += 1
                     continue
+                # Terminal outcome: no retry path still needs this stream, so the
+                # body can be consumed for a non-secret diagnostic (P2-FR-6.2).
+                detail = error_detail_from_http_error(exc)
                 log_integration_http(
                     integration="azure_devops",
                     method=m,
@@ -229,8 +235,9 @@ class WorkItemsClient:
                     status_code=code,
                     duration_ms=elapsed_ms,
                     sync_run_id=get_sync_run_id(),
+                    error=detail,
                 )
-                self._raise_http(exc)
+                self._raise_http(exc, detail)
             except URLError as exc:
                 if not mutating and attempt_get_recovery < MAX_GET_EXTRA_RETRIES:
                     self._sleep(_backoff_seconds(attempt_get_recovery))

@@ -343,7 +343,7 @@ The **`integration_audit`** **`record`** object uses the same **`event`** values
 
 | `record.event` | Meaning |
 |--------|---------|
-| **`integration_http`** | One line per terminal Snyk or Azure DevOps HTTP result (after retries). Includes `method`, `http_status`, `duration_ms`, `safe_target` (no secrets); **401/403** may include **`Authentication Failed`**. |
+| **`integration_http`** | One line per terminal Snyk or Azure DevOps HTTP result (after retries). Includes `method`, `http_status`, `duration_ms`, `safe_target` (no secrets); **401/403** may include **`Authentication Failed`**. For failed Azure DevOps calls, **`error`** carries the reason Azure DevOps gave (bounded and redacted) — **start here when work item creates or updates are rejected**. See **[Diagnosing rejected Azure DevOps calls](CONFIGURATION.md#diagnosing-rejected-azure-devops-calls)**. |
 | **`sync_summary`** | One line per **`sync`**: **`sync_duration_seconds`**, **`sync_outcome`** (`success` / `failure`). |
 
 Example line (wrapped for readability; runtime output is a **single** line):

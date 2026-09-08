@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from config.models import ISSUES_SYNC_FROM_HISTORICAL
+from sync.fix_signals import true_fix_signal_keys
 
 
 def issue_created_at_iso(record: Mapping[str, Any]) -> str | None:
@@ -44,18 +45,9 @@ def issue_passes_sync_from_filter(
 
 
 def attrs_indicate_fix_available(attrs: Mapping[str, Any]) -> bool:
-    """True when coordinates suggest an actionable fix (aligned with P2-FR-5.5 signals)."""
-    coords = attrs.get("coordinates")
-    if not isinstance(coords, list) or not coords:
-        return False
-    first = coords[0]
-    if not isinstance(first, dict):
-        return False
-    keys = (
-        "is_upgradeable",
-        "is_patchable",
-        "is_fixable_manually",
-        "is_fixable_snyk",
-        "is_fixable_upstream",
-    )
-    return any(first.get(k) is True for k in keys)
+    """True when any coordinate carries an actionable fix (P2-FR-5.5 signals).
+
+    All ``coordinates[]`` entries are inspected, not just the first.
+    ``is_pinnable`` does not satisfy the policy.
+    """
+    return bool(true_fix_signal_keys(attrs))
